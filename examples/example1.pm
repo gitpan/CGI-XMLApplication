@@ -35,6 +35,10 @@ sub selectStylesheet  {
   return $path_to_style . qw( bsp1.xsl bsp2.xsl )[$ctxt{-stylesheetid}];
 }
 
+# notice, that we do not implement getDOM!
+# this will cause CGI::XMLApplication to create an empty document
+# so the transformation will be done anyway
+
 # implicit handler
 # no init and exit needed here :)
 
@@ -42,9 +46,10 @@ sub selectStylesheet  {
 # parameter list.
 sub event_default {
   my $self = shift;
+  my $ctxt = shift;
   warn "test->default\n";
-  warn join(",",$self->getEvent()), "\n";
-  return $self->SUPER::event_default; # this is just for fun here
+  $ctxt->{-stylesheetid} = 1;
+  return 0;
 }
 
 # explicit handler
@@ -55,6 +60,7 @@ sub event_default {
 sub event_submit {
   my $self = shift;
   warn "test->submit\n";
+  $ctxt->{-stylesheetid} = 2;
   return 0;
 }
 

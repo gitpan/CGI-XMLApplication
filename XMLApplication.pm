@@ -1,9 +1,9 @@
-# $Id: XMLApplication.pm,v 1.4 2001/08/29 13:47:38 cb13108 Exp $
+# $Id: XMLApplication.pm,v 1.5 2001/11/16 23:33:12 cb13108 Exp $
 
 package CGI::XMLApplication;
 
 # ################################################################
-# $Revision: 1.4 $
+# $Revision: 1.5 $
 # $Author: cb13108 $
 #
 # (c) 2001 Christian Glahn <christian.glahn@uibk.ac.at>
@@ -14,13 +14,14 @@ package CGI::XMLApplication;
 #
 # ################################################################
 
+##
+# CGI::XMLApplication - Application Module for CGI scripts
+
 # ################################################################
 # module loading and global variable initializing
 # ################################################################
 use strict;
-# should remove use vars because of mod_perl
-use vars qw( $VERSION @panic $DEBUG $STYLESHEET_CALLBACK
-             $DOM_CALLBACK $SETEVENT_CALLBACK );
+
 use CGI;
 use Carp;
 
@@ -30,48 +31,37 @@ use Carp;
 @CGI::XMLApplication::ISA = qw( CGI );
 
 # ################################################################
-$VERSION = "0.9.3";
+$CGI::XMLApplication::VERSION = "1.0.0";
 
 # ################################################################
 # general configuration
 # ################################################################
 
-# for internationalization this should be read from a separate
-# configfile.
-@panic = (
+# some hardcoded error messages, the application has always, e.g.
+# to tell that a stylesheet is missing
+@CGI::XMLApplication::panic = (
           'No Stylesheet specified! ',
           'Stylesheet is not available! ',
           'Event not defined',
           'Application Error',
          );
 
-# extra callback names
-$STYLESHEET_CALLBACK = "selectStylesheet";
-$DOM_CALLBACK        = "requestDOM";
-$SETEVENT_CALLBACK   = "registerEvents";
-
-# The Debug Level
-$DEBUG = 0;
+# The Debug Level for verbose error messages
+$CGI::XMLApplication::DEBUG = 0;
 
 # ################################################################
 # methods
 # ################################################################
 sub new {
-  my $class = shift;
-  my $self = $class->SUPER::new( @_ );
-  bless $self, $class;
+    my $class = shift;
+    my $self = $class->SUPER::new( @_ );
+    bless $self, $class;
 
-  $self->{XML_CGIAPP_HANDLER_}    = [];
-  $self->{XML_CGIAPP_STYLESHEET_} = [];
-  $self->{XML_CGIAPP_STYLESDIR_}  = '';
+    $self->{XML_CGIAPP_HANDLER_}    = [$self->registerEvents()];
+    $self->{XML_CGIAPP_STYLESHEET_} = [];
+    $self->{XML_CGIAPP_STYLESDIR_}  = '';
 
-  # register the events to handle
-  if ( my $func = $self->can( $SETEVENT_CALLBACK ) ){
-    debug_msg( 10, "set event names" );
-    $self->setEventList( $self->$func() );
-  }
-
-  return $self;
+    return $self;
 }
 
 # ################################################################
@@ -80,76 +70,77 @@ sub new {
 # application related ############################################
 # both functions are only for backward compatibilty with older scripts
 sub debug_msg {
-  my $level = shift;
-  if ( $level <= $DEBUG && scalar @_ ) {
-    my ($module, undef, $line) = caller();
-    warn "[$module; line: $line] ", join(' ', @_) , "\n";
-  }
+    my $level = shift;
+    if ( $level <= $CGI::XMLApplication::DEBUG && scalar @_ ) {
+        my ($module, undef, $line) = caller(1);
+        warn "[$module; line: $line] ", join(' ', @_) , "\n";
+    }
 }
 
-sub setDebugLevel {
-  $DEBUG = $_[1];
-  debug_msg( 1, "new debug level is " . $_[1] );
+##
+# dummy functions
+#
+# each function is required to be overwritten by any class inheritated
+sub registerEvents   { return undef; }
+
+# all following function will recieve the context, too
+sub getDOM           { return undef; }
+sub requestDOM       { return undef; }  # old style use getDOM!
+sub selectStylesheet { return undef; }
+sub getXSLParameter  { return undef; }  # should return a plain hash of parameters passed to xsl
+sub setHttpHeader    { return undef; }  # should return a hash of header
+
+sub skipSerialization{
+    my $self = shift;
+    $self->{CGI_XMLAPP_SKIP_TRANSFORM} = shift if scalar @_;
+    return $self->{CGI_XMLAPP_SKIP_TRANSFORM};
 }
 
-sub getDebugLevel     { $DEBUG; }
+sub redirectToURI {
+    my $self = shift;
+    $self->{CGI_XMLAPP_REDIRECT} = shift if scalar @_;
+    return $self->{CGI_XMLAPP_REDIRECT};
+}
 
 # ################################################################
 # content related functions
-# non-xml content-type passthru ##################################
-# similar to set|getContentType but with a clearer name
-sub setNonXMLContentType { $_[0]->{XML_CGIAPP_CONTENT_TYPE_} = $_[1]; }
-sub getNonXMLContentType { return $_[0]->{XML_CGIAPP_CONTENT_TYPE_}; }
-
-# non-xml content passthru ##################################
-# NonXMLContent has to be a reference to a scalar!
-sub setNonXMLContent { $_[0]->{XML_CGIAPP_NONXMLCNT_} = $_[1] if ref($_[1]); }
-sub getNonXMLContent { return $_[0]->{XML_CGIAPP_NONXMLCNT_}; }
-
-# dom related ####################################################
-sub setDOM            { $_[0]->{XML_CGIAPP_DOM_} = $_[1];}
-sub getDOM            { $_[0]->{XML_CGIAPP_DOM_};}
 
 # stylesheet directory information ###############################
 sub setStylesheetDir  { $_[0]->{XML_CGIAPP_STYLESDIR_} = $_[1];}
 sub setStylesheetPath { $_[0]->{XML_CGIAPP_STYLESDIR_} = $_[1];}
 sub getStylesheetDir  { $_[0]->{XML_CGIAPP_STYLESDIR_}; }
+sub getStylesheetPath { $_[0]->{XML_CGIAPP_STYLESDIR_}; }
 
-# stylesheet list (since we provide multiple stylesheets) ########
-sub setStylesheetList { my $s=shift; $s->{XML_CGIAPP_STYLESHEET_} = [ @_ ]; }
-sub getStylesheetList { @{$_[0]->{XML_CGIAPP_STYLESHEET_}}; }
-
-# event related ##################################################
-sub setEventList      { my $s=shift; $s->{XML_CGIAPP_HANDLER_} = [ @_ ];}
+# event control ###################################################
 sub addEvent          { my $s=shift; push @{$s->{XML_CGIAPP_HANDLER_}}, @_;}
-sub getEvent          { @{ $_[0]->{XML_CGIAPP_HANDLER_} }; }
+sub getEventList      { @{ $_[0]->{XML_CGIAPP_HANDLER_} }; }
 
 sub testEvent         { return $_[0]->checkPush( $_[0]->getEvent() ); }
 
 sub deleteEvent       {
-  my $self = shift;
-  if ( scalar @_ ){
-    foreach ( @_ ) {
-      debug_msg( 8, "[XML::CGIAppliction] delete event $_" );
-      $self->delete( $_ );
-      $self->delete( $_.'.x' );
-      $self->delete( $_.'.y' );
+    my $self = shift;
+    if ( scalar @_ ){
+        foreach ( @_ ) {
+            debug_msg( 8, "[XML::CGIAppliction] delete event $_" );
+            $self->delete( $_ );
+            $self->delete( $_.'.x' );
+            $self->delete( $_.'.y' );
+        }
     }
-  }
-  else {
-    foreach ( @{ $self->{XML_CGIAPP_HANDLER_} } ){
-      debug_msg( 8, "delete event $_" );
-      $self->delete( $_ );
-      $self->delete( $_.'.x' );
-      $self->delete( $_.'.y' );
+    else {
+        foreach ( @{ $self->{XML_CGIAPP_HANDLER_} } ){
+            debug_msg( 8, "delete event $_" );
+            $self->delete( $_ );
+            $self->delete( $_.'.x' );
+            $self->delete( $_.'.y' );
+        }
     }
-  }
 }
 
 sub sendEvent         {
-  debug_msg( 10, "send event " . $_[1] );
-  $_[0]->deleteEvent();
-  $_[0]->param( -name=>$_[1] , -value=>1 );
+    debug_msg( 10, "send event " . $_[1] );
+    $_[0]->deleteEvent();
+    $_[0]->param( -name=>$_[1] , -value=>1 );
 }
 
 # error handling #################################################
@@ -157,7 +148,7 @@ sub setPanicMsg       { $_[0]->{XML_CGIAPP_PANIC_} = $_[1] }
 sub getPanicMsg       { $_[0]->{XML_CGIAPP_PANIC_} }
 
 # ################################################################
-# events
+# predefined events
 
 # default event handler prototypes
 sub event_init    {}
@@ -169,42 +160,34 @@ sub event_default { return -1 }
 
 # this is required by the eventhandling
 sub checkPush {
-  my $self = shift;
-  my ( $pushed ) = grep {
-    length $self->param( $_ ) ||  length $self->param( $_.'.x')
-  } @_;
-  $pushed =~ s/\.x$//i if defined $pushed;
-  return $pushed;
+    my $self = shift;
+    my ( $pushed ) = grep {
+        length $self->param( $_ ) ||  length $self->param( $_.'.x')
+    } @_;
+    $pushed =~ s/\.x$//i if defined $pushed;
+    return $pushed;
 }
-
-# cookies are only application related, through these functions we
-# provide a passthrough mechanism to get and set cookies.
-sub setCookie         {$_[0]->{XML_CGIAPP_COOKIE_} = $_[1]}
-sub getCookie         {$_[0]->{XML_CGIAPP_COOKIE_}}
-sub setContentType    {$_[0]->{XML_CGIAPP_CONTENT_TYPE_} = $_[1]}
-sub getContentType    {$_[0]->{XML_CGIAPP_CONTENT_TYPE_}}
 
 # helper functions which were missing in CGI.pm
 sub checkFields{
-  my $self = shift;
-  my @missing = grep {
-    not length $self->param( $_ ) || $self->param( $_ ) =~ /^\s*$/
-  } @_;
-  return wantarray ? @missing : ( scalar(@missing) > 0 ? undef : 1 );
+    my $self = shift;
+    my @missing = grep {
+        not length $self->param( $_ ) || $self->param( $_ ) =~ /^\s*$/
+    } @_;
+    return wantarray ? @missing : ( scalar(@missing) > 0 ? undef : 1 );
 }
 
-sub getFieldsAsHash {
-  my $self = shift;
-  my $ptrHash = $self->Vars;
-  my $ptrRV   = {};
+sub getParamHash {
+    my $self = shift;
+    my $ptrHash = $self->Vars;
+    my $ptrRV   = {};
 
-  my @aMatch  = grep {
-    exists $ptrHash->{$_} && $ptrHash->{$_} !~ /^[\s\0]*$/
-  } @_;
+    foreach my $k ( keys( %{$ptrHash} ) ){
+        next unless exists $ptrHash->{$_} && $ptrHash->{$_} !~ /^[\s\0]*$/;
+        $ptrRV->{$k} = $ptrHash->{$k};
+    }
 
-  map { $ptrRV->{$_} = $ptrHash->{$_} } @aMatch;
-
-  return wantarray ? %{$ptrRV} : $ptrRV;
+    return wantarray ? %{$ptrRV} : $ptrRV;
 }
 
 # ################################################################
@@ -216,157 +199,138 @@ sub getFieldsAsHash {
 # event handling
 # app exit
 # serialization and output
+# error handling
 sub run {
-  my $self = shift;
-  my $sid = -1;
-  my $ctxt = {@_}; # context hash
+    my $self = shift;
+    my $sid = -1;
+    my $ctxt = {@_}; # context hash
 
-  $self->event_init($ctxt);
+    $self->event_init($ctxt);
 
-  if ( my $n = $self->checkPush( $self->getEvent() ) ) {
-    if ( my $func = $self->can( 'event_'.$n ) ) { $sid = $self->$func($ctxt) }
-    else                                        { $sid = -3; }
-  }
+    if ( my $n = $self->checkPush( $self->getEvent() ) ) {
+        if ( my $func = $self->can( 'event_'.$n ) ) {
+            $sid = $self->$func($ctxt)
+        }
+        else {
+            $sid = -3;
+        }
+    }
 
-  if ( $sid == -1 ){
-    $sid = $self->event_default($ctxt);
-  }
-  $self->event_exit($ctxt);
+    if ( $sid == -1 ){
+        $sid = $self->event_default($ctxt);
+    }
 
-  # if we allready panic, don't try to render
-  if ( $sid >= 0 ) {
-    $sid = $self->serialization( $ctxt );
-  }
+    $self->event_exit($ctxt);
 
-  $self->panic( $sid, $ctxt );
+    # if we allready panic, don't try to render
+    if ( $sid >= 0 ) {
+        # check if we wanna redirect
+        if ( my $uri = $self->redirectToURI() ) {
+            my %h = $self->setHttpHeader( $ctxt );
+            print $self->header( %h );
+            print $self->redirect( -uri=>$uri ) . "\n\n";
+        }
+        elsif ( not $self->skipSerialization() ) {
+            # sometimes it is nessecary to skip the serialization
+            # eg. due passing binary data.
+            $sid = $self->serialization( $ctxt );
+        }
+    }
+
+    $self->panic( $sid, $ctxt );
 }
 
-
 sub serialization {
-  my $self = shift;
-  my $ctxt = shift;
-  my $dl       = $self->getDebugLevel();
-  my $id;
-  my $cookie = $self->getCookie();
-
-  # first we check if content type and Non XML data exist.
-  if ( $self->getNonXMLContentType() && ref($self->getNonXMLContent()) ) {
-    debug_msg( 10, "return non XML data to client" );
-    my %header = ( -type=> $self->getNonXMLContentType() );
-    $header{-cookie} = $cookie if $cookie;
-    print $self->header( %header );
-    print ${ $self->getNonXMLContent() };
-    return 1;
-  }
-
-  debug_msg( 10, "Handle XML Data" );
-
-  my $xml_doc = $self->getDOM();
-  if ( not defined $xml_doc ) {
-    if ( my $func = $self->can( $DOM_CALLBACK ) ) {
-      debug_msg( 10, "DOM Request callback");
-      $xml_doc = $self->$func( $ctxt );
-    }
-
-    if ( not defined $xml_doc ) {
-      debug_msg( 10, "no DOM defined; use empty DOM" );
-      $xml_doc = XML::LibXML::Document->new;
-    }
-  }
-
-  if( length  $self->param( 'passthru' ) ) {
-    # this is a useful feature for DOM debugging
-    debug_msg( 10, "attempt to pass the DOM to the client" );
-    print $self->header( -type=>'text/xml'  );
-    # my $cookie = $self->getCookie();
-    # if ( defined $cookie ) {
-    #   print "<COOKIE=> '". $cookie . "'\n\n";
-    # }
-
-    print $xml_doc->toString();
-
-    return 0;
-  }
-
-  my $file = undef;
-  if( my $func = $self->can( $STYLESHEET_CALLBACK ) ) {
-    debug_msg( 10, "call stylesheet selector" );
-    $file = $self->$func( $ctxt );
-  }
-  else {
-    # backward compatibility
-    # generate the stylesheet filename.
-    $file = $self->getStylesheetDir() . ($self->getStylesheetList())[$id];
-  }
-
-  debug_msg( 5, "filename is $file" );
-
-  # we only do the rendering if the stylesheet is available from our
-  # viewpoint.
-
-  if ( -f $file && -r $file ) {
+    # i require both modules here, so one can implement his own
+    # serialization
     require XML::LibXML;
     require XML::LibXSLT;
 
-    # prepare default values
-    my %header = ();
+    my $self = shift;
+    my $ctxt = shift;
+    my $id;
 
-    %header = ( -cookie=>$cookie ) if $cookie;
+    my %header = $self->setHttpHeader( $ctxt );
+
+    my $xml_doc = $self->getDOM( $ctxt );
+    if ( not defined $xml_doc ) {
+        debug_msg( 10, "use old style interface");
+        $xml_doc = $self->requestDOM( $ctxt );
+    }
+    # if still no document is available
+    if ( not defined $xml_doc ) {
+        debug_msg( 10, "no DOM defined; use empty DOM" );
+        $xml_doc = XML::LibXML::Document->new;
+    }
+
+    if( length  $self->param( 'passthru' ) ) {
+        # this is a useful feature for DOM debugging
+        debug_msg( 10, "attempt to pass the DOM to the client" );
+        $header{-type} = 'text/xml';
+        print $self->header( %header  );
+        print $xml_doc->toString();
+        return 0;
+    }
+
+    my $stylesheet = $self->selectStylesheet( $ctxt );
+    my ( $xsl_dom, $style, $res );
 
     my $parser = XML::LibXML->new();
     my $xslt   = XML::LibXSLT->new();
 
-    my ( $xsl_dom, $stylesheet, $res );
-    # this first step is for double checking, since xsl has to be valid
-    # XML, too.
-    eval {
-      $xsl_dom  = $parser->parse_file( $file );
-    };
-    if ( $@ ) {
-      debug_msg( 3, "Corrupted Stylesheet:\n broken XML\n". $@ );
-      $self->setPanicMsg( "Corrupted document:\n broken XML\n". $@ );
-      return -2;
+    if ( ref( $stylesheet ) ) {
+        debug_msg( 5, "stylesheet is reference"  );
+        $xsl_dom = $stylesheet;
+    }
+    elsif ( -f $stylesheet && -r $stylesheet ) {
+        debug_msg( 5, "filename is $stylesheet" );
+        eval {
+            $xsl_dom  = $parser->parse_file( $stylesheet );
+        };
+        if ( $@ ) {
+            debug_msg( 3, "Corrupted Stylesheet:\n broken XML\n". $@ );
+            $self->setPanicMsg( "Corrupted document:\n broken XML\n". $@ );
+            return -2;
+        }
+    }
+    else {
+        debug_msg( 2 , "panic stylesheet file $stylesheet does not exist" );
+        $self->setPanicMsg( "$stylesheet" );
+        return -2;
     }
 
-    debug_msg( 8, "parsed stylesheet file ",
-          ref( $xsl_dom ) ,
-          "\nprepare stylesheet\n" );
-
     eval {
-      # we simply can't do this, since libxslt will trash the stylesheet dom
-      # which will cause strange segfaults in several cases.
-
-      # $stylesheet = $xslt->parse_stylesheet( $xsl_dom ); # never uncomment!!
-
-      # therefore i'll parse the stylesheet again, but in this case
-      # the error messages will be more xsl related that in the first
-      # XML validation run. i know, this IS is an overhead, because
-      # parsing the same file twice, but it will return better
-      # errormessages.
-      $stylesheet = $xslt->parse_stylesheet_file( $file );
+        $style = $xslt->parse_stylesheet( $xsl_dom );
+        # $style = $xslt->parse_stylesheet_file( $file );
     };
     if( $@ ) {
-      debug_msg( 3, "Corrupted Stylesheet:\n". $@ ."\n" );
-      $self->setPanicMsg( "Corrupted Stylesheet:\n". $@ );
-      return -2;
-    }
-    debug_msg( 8, "serialization do tranform" );
-    eval {
-      $res = $stylesheet->transform( $xml_doc );
-    };
-    if( $@ ) {
-      debug_msg( 3, "Broken Transformation:\n". $@ ."\n" );
-      $self->setPanicMsg( "Broken Transformation:\n". $@ );
-      return -2;
+        debug_msg( 3, "Corrupted Stylesheet:\n". $@ ."\n" );
+        $self->setPanicMsg( "Corrupted Stylesheet:\n". $@ );
+        return -2;
     }
 
-    # this is a workaround for the encoding bug in XML::LibXML < 0.95
-    if ($XML::LibXSLT::VERSION >= 1.03) {
-      $header{-type} = $self->{XML_CGIAPP_CONTENT_TYPE_}
-                       || $stylesheet->media_type;
-      $header{-charset} = $stylesheet->output_encoding;
-      debug_msg( 10, "Output $type, $encoding" );
+    my %xslparam = $self->getXSLParameter( $ctxt );
+    eval {
+        # first do special xpath encoding of the parameter
+        if ( scalar %xslparam > 0) {
+            $res = $style->transform( $xml_doc,
+                                      XML::LibXSLT::xpath_to_string(%xslparam)
+                                    );
+        }
+        else {
+            $res = $style->transform( $xml_doc );
+        }
+    };
+    if( $@ ) {
+        debug_msg( 3, "Broken Transformation:\n". $@ ."\n" );
+        $self->setPanicMsg( "Broken Transformation:\n". $@ );
+        return -2;
     }
+
+    # override content-type with the correct content-type
+    # of the style (is this ok?)
+    $header{-type}    = $stylesheet->media_type;
+    $header{-charset} = $stylesheet->output_encoding;
 
     debug_msg( 10, "serialization do output" );
     # we want nice xhtml and since the output_string does not the
@@ -375,45 +339,37 @@ sub serialization {
 
     debug_msg( 9, "serialization get output string" );
     eval {
-      $out_string =  $stylesheet->output_string( $res );
+        $out_string =  $stylesheet->output_string( $res );
     };
     debug_msg( 10, "serialization rendered output" );
     if ( $@ ) {
-      debug_msg( 3, "Corrupted Output:\n", $@ , "\n" );
-      $self->setPanicMsg( "Corrupted Output:\n". $@ );
-      return -2;
+        debug_msg( 3, "Corrupted Output:\n", $@ , "\n" );
+        $self->setPanicMsg( "Corrupted Output:\n". $@ );
+        return -2;
     }
     else {
-      # do the output
-      print $self->header( %header );
-      $out_string =~ s/\/>/ \/>/g; # yes, this is time consuming ... :(
-      print $out_string;
-      debug_msg( 10, "output printed" );
+        # do the output
+        print $self->header( %header );
+        print $out_string;
+        debug_msg( 10, "output printed" );
     }
-    debug_msg( 11, "XML::LibXSLT segfault test" );
-    $id = 0;
-  }
-  else {
-    debug_msg( 2 , "panic stylesheet file $file does not exist" );
-    $self->setPanicMsg( "$file" );
-    $id = -2;
-  }
-  return $id;
+
+    return 0;
 }
 
 sub panic {
-  my ( $self, $pid ) = @_;
-  return unless $pid < 0;
-  $pid++;
-  $pid*=-1;
+    my ( $self, $pid ) = @_;
+    return unless $pid < 0;
+    $pid++;
+    $pid*=-1;
 
-  my $str = "PANIC $pid :" .  $panic[$pid] ;
-  # this is nice for debugging from logfiles...
-  debug_msg( 1, "$str\n", $self->getPanicMsg() );
+    my $str = "PANIC $pid :" .  $CGI::XMLApplication::panic[$pid] ;
+    # this is nice for debugging from logfiles...
+    debug_msg( 1, "$str\n", $self->getPanicMsg() );
 
-  print $self->header( 'text/html' ) ,$self->b($str) ,"<br />\n";
-  print "( <pre>".$self->getPanicMsg() , "</pre> )<br />\n\n";
-  print "Please Contact the Systemadminstrator<br />\n";
+    print $self->header( 'text/html' ) ,$self->b($str) ,"<br />\n";
+    print "( <pre>".$self->getPanicMsg() , "</pre> )<br />\n\n";
+    print "Please Contact the Systemadminstrator<br />\n";
 }
 
 1;
@@ -429,11 +385,11 @@ CGI::XMLApplication -- Object Oriented Interface for CGI Script Applications
   use CGI::XMLApplication;
 
   $script = new CGI::XMLApplication;
-  $script->setStylesheetList( @STYLESHEETS );
+  $script->setStylesheetPath( "the/path/to/the/stylesheets" );
 
   # either this for simple scripts
   $script->run();
-  # or if you need more controll ...
+  # or if you need more control ...
   $script->run(%context_hash);
 
 =head1 DESCRIPTION
@@ -441,21 +397,29 @@ CGI::XMLApplication -- Object Oriented Interface for CGI Script Applications
 CGI::XMLApplication is a CGI application class, that intends to enable
 perl artists to implement CGIs that make use of XML/XSLT
 functionality, without taking too much care about specialized
-errorchecking. Also it is ment to provide the power of the
-L<XML::LibXML>/ L<XML::LibXSLT> module package. CGI::XMLApplication's
-serialization process pays a lot attention of keeping an application
-stable to run. So a programmer has not to bother about some of
-XML::LibXML/ XML::LibXSLT serialization pitfalls.
+errorchecking or even care too much about XML itself. It provides the
+power of the L<XML::LibXML>/ L<XML::LibXSLT> module package for
+content deliverment.
 
-This class module extends the CGI class. While all functionality of
-the original CGI package is still available, it should be not such a
-big problem, to port existing scripts to CGI::XMLApplication.
+As well CGI::XMLApplication is designed to support project management
+on code level. The class allows to split web applications into several
+simple parts. Through this most of the code stays simple and easy to
+maintain. Throughout the whole lifetime of a script
+CGI::XMLApplication tries to keep the application stable. As well a
+programmer has not to bother about some of XML::LibXML/ XML::LibXSLT
+transformation pitfalls.
+
+The class module extends the CGI class. While all functionality of the
+original CGI package is still available, it should be not such a big
+problem, to port existing scripts to CGI::XMLApplication, although
+most functions used here are the access function for client data
+such as I<param()>.
 
 CGI::XMLApplication, intended to be an application class should make
-writing of CGI scripts extremly easy. Especially because of the use of
-object orientated concepts, this class enables much more transparent
-implemententations with complex functionality compared to what is
-possible with standard CGI-scripts.
+writing of XML enabled CGI scripts more easy. Especially because of
+the use of object orientated concepts, this class enables much more
+transparent implemententations with complex functionality compared to
+what is possible with standard CGI-scripts.
 
 The main difference with common perl CGI implementation is the fact,
 that the client-output is not done from perl functions, but generated
@@ -473,18 +437,19 @@ Since the class uses the OO paradigma, it does not force anybody to
 implement a real life application with the complete overhead of more
 or less redundant code. Since most CGI-scripts are waiting for
 B<events>, which is usually the abstraction of a click of a submit
-button or an image, CGI::XMLApplication lets the programmer specify
-the handler for such events.
+button or an image, CGI::XMLApplication implements a simple event
+system, that allows to keep event related code as separated as
+possible.
 
 Therefore final application class is not ment to have a constructor
 anymore. All functionality should be encapsulated into implicit or
 explicit event handlers. Because of a lack in Perl's OO implementation
 the call of a superclass constructor before the current constructor
 call is not default behavior in Perl. For that reason I decided to
-have special 'events' to enable the application to initialize correctly,
-excluding the danger of leaving important variables undefined. On the other
-hand this forces the programmer to implement the script rather problem
-orientated, than the class.
+have special B<events> to enable the application to initialize
+correctly, excluding the danger of leaving important variables
+undefined. On the other hand this forces the programmer to implement
+scripts more problem orientated, rather than class focused.
 
 Another design aspect for CGI::XMLApplication is the strict differentiation
 between CODE and PRESENTATION. IMHO this, in fact being one of the
@@ -496,10 +461,11 @@ B<Pay attention that XML-DOM means the DOM of XML::LibXML and not XML::DOM!>
 
 =head2 What are Events and how to catch them
 
-Most CGI handle the result of HTML-Forms or similar requests from clients.
-Analouge to GUI Programming, CGI::XMLApplication calls this an B<event>.
-Spoken in CGI/HTML-Form words, a CGI-Script handles the various situations
-a clients causes by pushing a submit button or follows a special link. 
+Most CGI handle the result of HTML-Forms or similar requests from
+clients.  Analouge to GUI Programming, CGI::XMLApplication calls this
+an B<event>.  Spoken in CGI/HTML-Form words, a CGI-Script handles the
+various situations a clients causes by pushing a submit button or
+follows a special link.
 
 An event of CGI::XMLApplication has the same B<name> as the input
 field, that should cause the event. The following example should
@@ -510,7 +476,7 @@ illustrate this a little better:
     <!-- SOME MORE HTML :) -->
 
 If a user clicks the submitbutton and you have registered the event
-name B<dumm> for your script, CGI::XMLApplication will try to call the
+name B<dummy> for your script, CGI::XMLApplication will try to call the
 function B<event_dummy()>. The script module to handle the dummy event
 would look something like the following code:
 
@@ -534,19 +500,19 @@ with ordinary submit buttons, which get often changed to so called
 input images, to fit into the UI of the Website. CGI::XMLApplication
 will recognize such changes, so the code has not to be changed if the
 presentation of the form changes. Therefore there is no need to
-declare separate events for input images. E.g. evname makes
-CGI::XMLApplication look for evname B<and> evname.x in the
+declare separate events for input images. E.g. an event called evname
+makes CGI::XMLApplication look for evname B<and> evname.x in the
 querystring.
 
 Some programmer are suspious which event CGI::XMLApplication will
 call.  The function B<testEvent> checks all events if one is valid and
 returns the name of event. Much more important is the possibility to
 send B<error events> from the event_init() function. This is done with
-the B<sendEvent> Function. This will set a new parameter to the CGI'S
+the B<sendEvent> Function. This will set a new parameter to the CGI's
 querystring after removing all other events. B<One can only send
 events that are already registred!>.
 
-CGI::XMLApplication doesn't implement an event queqe. For GUI
+CGI::XMLApplication doesn't implement an event queqe yet. For GUI
 programmers this seems like a unnessecary restriction. I terms of CGI
 it makes more sense to think of a script as a program, that is only
 able to scan its event queqe only once during runtime. The only chance
@@ -561,9 +527,11 @@ function, the event will get lost.
 
 Being the main routine this should be the only method called by the
 script apart from the constructor. All events are handled inside the
-method B<run()>.  Since this method is extremly simple and transparent to
-any kind of display type, there should be no need to override this
-function.
+method B<run()>.  Since this method is extremly simple and transparent
+to any kind of display type, there should be no need to override this
+function. One can pass a context hash, to pass external or prefetched
+information to the application. This context will be available and
+acessable in all events and most extra functions.
 
 This function does all event and serialization related work. As well
 there is some validation done as well, so catched events, that are not
@@ -597,6 +565,34 @@ should return a value greater or eqal than 0. If the value is less
 than 0, CGI::XMLApplication assumes a script panic, and will not try
 to render a stylesheet or DOM.
 
+There are defined panic levels:
+
+=over 4
+
+=item -1
+
+Stylesheet missing
+
+=item -2
+
+Stylesheet not available
+
+=item -3
+
+Event not defined
+
+=item -4
+
+Application panic
+
+=back
+
+Apart from B<Application Panic> the panic levels are set
+internally. An Application Panic should be set if the application
+catches an error, that does not allow any XML/XSLT processing. This
+can be for example, that any required perl modules are not installed
+on the system.
+
 If the B<selectStylesheet> is not implemented the CGI::XMLApplication
 will assume the returned value as id to a stylesheet list set by
 setStylesheetList(). Basicly this is done for backward compatibility
@@ -619,27 +615,25 @@ with setStylesheetList().
 
 =over 4
 
-=item method setEventList LIST
+=item method registerEvents
 
-This method, usually called during the initialization of the
-application, sets a list of events available. If you use this method
-you might lose events already defined by a superclass. Therefore this
-way of event definition is only useful if you are sure that you only
-need to handle events you have control of.
+This method is called by the class constructor. Each application
+should register the events it like to handle. It should return an
+array of eventnames such as eg. 'remove' or 'store'. This list is used
+to find which event a user caused on the client side.
 
 =item function testEvent
 
-Sometimes it is nesseccary to check which event is relevant for the
-current script. This function selects the name of the currently valid
-callback. If this function returns undef, the default event is active.
+If it is nesseccary to check which event is relevant for the current
+script one can use this function to find out in event_init(). If this
+function returns undef, the default event is active, otherwise it
+returns the eventname as defined by B<registerEvents>.
 
 =item method addEvents LIST
 
 addEvents() also takes a list of events the application will
 handle. Contrary to setEventList() this does not override previously
-defined events. This method is almost always the better solution if
-the application is not directly based on CGI::XMLApplication.
-#what does directly based mean here?
+defined events.
 
 =item method sendEvent SCALAR
 
@@ -685,9 +679,9 @@ Example:
   sub event_missing {
      my ( $self , $context ) = @_;
 
-     ... your error handling code here ...
+     ... your error handling code goes ...
 
-     return -4 if $panic;  # just for illustration :D
+     return -4 if $panic;  # just for illustration
      return 0;
   }
 
@@ -696,16 +690,15 @@ Example:
 =head2 Implicit Events
 
 CGI::XMLApplication knows three implicit events which are more or less
-independent to the client's response: They are 'init', 'exit', and
+independent to client responses: They are 'init', 'exit', and
 'default'.
 
-If there is need to override one of these handler -- and I hope
-there will be ;) -- the particular event should call the
-related event handler of its superclass as first action. This might be
-skipped, if the function should do everything right by itself.
-I prefere the first technique, because it is more secure and
-makes things easier to debug.
-#example
+If there is need to override one of these handler -- and I hope there
+will be ;) -- the particular event should call the related event
+handler of its superclass as first action. This might be skipped, if
+the function should do everything right by itself.  I prefere the
+first technique, because it is more secure and makes things easier to
+debug.
 
 Each event has a single Parameter, the context. This is a hash
 reference, where the user can store whatever needed. This context is
@@ -717,8 +710,8 @@ around.
 =item event_init
 
 The init event is set before the CGI::XMLApplication tries to evaluate
-any of the script's parameters. Therefore the event_init method should
-be used to initialize the application.
+any of script parameters. Therefore the event_init method should be
+used to initialize the application.
 
 =item event_exit
 
@@ -735,7 +728,7 @@ if no event matched.
 
 =back
 
-=head2 Extra Callbacks
+=head2 Extra Methods
 
 There are some extra callbacks may implemented:
 
@@ -743,22 +736,25 @@ There are some extra callbacks may implemented:
 
 =item * selectStylesheet
 
-=item * requestDOM
+=item * getDOM
 
 =item * registerEvents
 
+=item * setHttpHeader
+
+=item * getXSLTParameter
+
 =back
 
-These two callbacks are used by the render_to_client function, to
-create the content related datastructure. Like event functions these
-callback functions have to be implemented as class member, and like
-event funcitons the functions will have the context passed as the
-single parameter.
+These methods are used by the serialization function, to create the
+content related datastructure. Like event functions these functions
+have to be implemented as class member, and like event funcitons the
+functions will have the context passed as the single parameter.
 
 B<selectStylesheet()> has to return a valid path/filename for the
 stylesheet requested.
 
-B<requestDOM()> has to return the DOM later used by the stylesheet
+B<getDOM()> has to return the DOM later used by the stylesheet
 processor.
 
 the B<registerEvents> is slightly different implemented than other
@@ -766,6 +762,18 @@ event or callback functions. It will not recieve any context data,
 since it is called even before the B<run> function, that creates the
 context. It should return an array containing the names of the
 explicit events handled by the script.
+
+B<setHttpHeader> should return a hash of headers (but not the
+Content-Type). This can be used to set the I<nocache> pragma, to set
+or remove cookies. The keys of the hash must be the same as the named
+parameters of CGI.pm's header method.
+
+The last function B<getXSLTParameter> is called by B<serialization>
+just before the xslt processing is done. This alows to pass up to 256
+parameters to the processor. This function should return a hash or
+undefined. The hash will be transformed to fit the XML::LibXSLT
+interface, so one can simply pass a hash of strings to
+CGI::XMLApplication.
 
 =head2 Helperfunctions for internal use
 
@@ -782,18 +790,9 @@ by a '.x'. In context of events this function interprets each item
 part in the query string list as an event. Because of that, the
 algorithm returns only the first item matched.
 
-
 If you use the event interface on this function, make sure, the
 HTML-forms pass unique events to the script. This is neccessary to
 avoid confusing behaviour.
-
-=item method setCookie CGI::COOKIE
-
-=item function getCookie
-
-If you ever need to send a cookie to the client, you should use this
-method/function pair. It helps to automatically generate the
-correct header send to the client.
 
 =item function serialization()
 
@@ -802,24 +801,46 @@ the stylesheet returned by the event handler. You should override
 this function if you like to use a different way of displaying your
 data.
 
-B<serialization> checks if there exists a Non XML Content Type and Non
-XML Data. In such cases the function will directly return the data
-with the associated content-type. Any cookies set will be passed as
-well.
-
-You may not override the B<serialization> function, if you just handle
-XML data that should be transformed XSLT stylesheets. In somecases the
-returned data is not XML but for instance in PDF format, while most of
-the time XML Data is still used. For such cases the serialization
-function can be overridden and the special output functionality can be
-added.
-
-The return value of B<serialization> should be greater than zero (0)
-if no error occured. Otherwise the panic() function will be called and
-will send an error message to the client.
-
 For debugging purposes the parameter B<passthru> can be used to directly
 pass the stringified DOM-tree to the client. (Quite useful, as I realized. :) )
+
+To avoid the call of B<serialization()> one should set B<skipSerialization>.
+
+   event_default {
+      my $self = shift;
+      # avoid serialization call
+      $self->skipSerialization( 1 ); # use 0 to unset
+
+      # now you can directly print to the client, but don't forget the
+      # headers.
+
+      return 0;
+   }
+
+If the serialization should be skipped, CGI::XMLApplication will not
+print any headers. In such case the application is on its own to pass
+all the output.
+
+The algorithm used by serialization is simple:
+
+=over 4
+
+=item * request the appplication DOM through B<getDOM()>
+
+=item * get the stylesheet the application preferes through B<selectStylesheet()>
+
+=item * parse the stylesheet
+
+=item * transform the DOM with the stylesheet
+
+=item * set Content-Type and headers
+
+=item * return the content to the client
+
+=back
+
+If errors occour on a certain stage of serialization, the application
+is stopped and the generated error messages are returned.
 
 =item method panic SCALAR
 
@@ -834,31 +855,6 @@ the method is called twice, only the last string will be displayed.
 =item function getPanicMsg
 
 This method returns the panic message set by setPanicMsg().
-
-=item method setNonXMLContentType
-
-In some cases a script should return a special Content-Type to the
-client.  This content type can be set with this function. Since there
-is only a single content allowed this function will overwrite any
-previously set content type.
-
-=item function getNonXMLContentType
-
-This function is used by serialization function to get the current
-content type.
-
-=item method setNonXMLContent
-
-In cases binary data shall get passed to the client, this function
-enables to pass a reference to a scalar (string) to the application.
-For this binary data has to be read entirely into a string. If one
-likes to stream data from a file B<serialization> has to be
-overridden.
-
-=item function getNonXMLContent
-
-Through this function B<serialization> fetches any type of data
-previously set by B<setNonXMLContent>.
 
 =back
 
@@ -876,7 +872,7 @@ correctly. Called in array context the function returns the list of
 missing parameter. (Different to param() which returns all parameter names).
 In scalar context the function returns a boolean value.
 
-=item function getFieldsAsHash LIST
+=item function getParamHash LIST
 
 This function is a bit better for general data processing as
 the standard CGI::Vars function. While Vars sets a keys for each
@@ -890,7 +886,7 @@ structure Vars returns.
 
 =back
 
-=head2 XML/XSL Integration (obsolete)
+=head2 some extra functions for stylesheet handling
 
 CGI::XMLApplication had originally a rather strict design for XML/XSL
 integration, therefore there are some specific functions to manipulate
@@ -898,28 +894,7 @@ data for such a system. The following functions left in the package,
 so older applications does not have to be rewritten. Now I recommend,
 to use the callback/ overriding system.
 
-
-=item method setDOM( XML::LibXML::Document )
-
-This method sets a user initialized DOM to the class. Usually this is
-done once per application. Be aware, that the DOM is passed straight
-to the XSLT renderer. If you would like to implement your own
-B<serialization()> method (which is described below), you may set a
-different DOM.
-
-Since the current version provides a requestDOM callback, a programmer
-may not call setDOM anymore from within the events, but store the
-output DOM in the applications context. In this case there B<has to> be
-the B<requestDOM> function implemented.
-
 =over 4
-
-=item function getDOM
-
-This method is the inversion of setDOM. It returns the DOM of the current
-application set by setDOM. This function will be quite helpful if
-you have to access the DOM in different parts of the application.
-Returns what ever you set (default XML::XPath::Node::Element)
 
 =item method setStylesheetDir DIRNAME
 
@@ -931,48 +906,11 @@ This method is for telling the application where the stylesheets can be found.
 If you keep your stylesheets in the same directory as your script
 -- generally a bad idea -- you might leave this untouched.
 
-=item function getStylesheetDir
+=item function getStylesheetPath
 
 This function is only relevant if you write your own
 B<serialization()> method. It returns the current path to the
 application stylesheets.
-
-=item method setStylesheetList LIST
-
-The stylesheet list should include all filenames of the stylesheets
-the script wants to access. Depending on the event, the stylesheet is
-accessed by the event handler's return value. For example if 0 is
-returned, the first stylesheet in the list is selected.
-
-Example:
-
- sub event_init {
-    my $self = shift;
-    my rv = $self->SUPER::event_init();
-
-   ...do something here...
-
-    $self->setStylesheetList( 'default.xsl', 'error.xsl' ) ;
-
-   ...do something here...
-
- }
-
- sub event_default {
-    my $self = shift;
-    $self->SUPER::event_default();
-
-   ...do something here...
-
-    return 1 if $errorcondition == 1; #error.xsl is used for rendering
-    return 0; #default.xsl is used for rendering
- }
-
-=item function getStylesheetList
-
-This inversion of setStylesheetList returns an array with the
-stylesheet's names. This function is used by the B<serialization>
-function.
 
 =back
 
@@ -986,4 +924,4 @@ Christian Glahn, christian.glahn@uibk.ac.at
 
 =head1 VERSION
 
-0.8.1
+1.0.0

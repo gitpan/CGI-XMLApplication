@@ -1,8 +1,10 @@
-Revision history for Perl extension CGI.
+Revision history for Perl extension CGI::XMLApplication
 
-0.8  Thu Jul  5 11:31:26 2001
-    Made the Package work with MakeMaker after using it as a private
-    Module for some Months
+1.0
+    + cleaned the structure
+    + uses strict
+    + better code to handle binary response data
+    - old (compatibility) code 
 
 0.8.1 Sat Jul 21 14:43 2001
     Renamed the Package from CGI::OO to CGI::XMLApplication, since that
@@ -10,3 +12,8 @@ Revision history for Perl extension CGI.
     
     As well I enabled the run function, to get a context hash as a
     parameter.
+
+0.8  Thu Jul  5 11:31:26 2001
+    Made the Package work with MakeMaker after using it as a private
+    Module for some Months
+

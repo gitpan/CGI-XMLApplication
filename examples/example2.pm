@@ -51,8 +51,16 @@ sub requestDOM     { my ( undef, $ctxt ) = @_; return $ctxt->{-XML}; }
 # one can implement any complexity of stylesheet selection wanted, but
 # i recommend to keep this function as simple as possible.
 sub selectStylesheet {
-  my ( undef, $ctxt ) = @_;
-  return './' . qw( ex2_form.xsl ex2_finish.xsl )[ $ctxt->{-stylesheet} ];
+  my ( $self, $ctxt ) = @_;
+  return $self->getStylesheetPath() . qw( ex2_form.xsl ex2_finish.xsl )[ $ctxt->{-stylesheet} ];
+}
+
+
+# the following subroutine will make CGI::XMLApplication to pass the returned 
+# hash to the stylesheetprocessor
+sub getXSLTParameter {
+  my ( $self, $ctxt ) = @_;
+  return ( test=>$ctxt->{-test}||-1 );
 }
 
 # the init event should do all required initializing, that is common

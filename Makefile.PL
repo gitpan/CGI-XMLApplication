@@ -4,5 +4,5 @@ use ExtUtils::MakeMaker;
 WriteMakefile(
     'NAME'		=> 'CGI::XMLApplication',
     'VERSION_FROM'	=> 'XMLApplication.pm', # finds $VERSION
-    'PREREQ_PM'		=> {XML::LibXML => 0.95, XML::LibXSLT => 1.05 }, 
+    'PREREQ_PM'		=> {XML::LibXML => 1.10, XML::LibXSLT => 1.08 }, 
 );
