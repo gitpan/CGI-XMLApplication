@@ -1,9 +1,9 @@
-# $Id: XMLApplication.pm,v 1.18 2002/10/30 12:16:10 c102mk Exp $
+# $Id: XMLApplication.pm,v 1.19 2004/03/10 17:55:00 c102mk Exp $
 
 package CGI::XMLApplication;
 
 # ################################################################
-# $Revision: 1.18 $
+# $Revision: 1.19 $
 # $Author: c102mk $
 #
 # (c) 2001 Christian Glahn <christian.glahn@uibk.ac.at>
@@ -24,6 +24,7 @@ use strict;
 
 use CGI;
 use Carp;
+#use Data::Dumper;
 
 # ################################################################
 # inheritance
@@ -32,7 +33,7 @@ use Carp;
 
 # ################################################################
 
-$CGI::XMLApplication::VERSION = "1.1.2";
+$CGI::XMLApplication::VERSION = "1.1.3";
 
 # ################################################################
 # general configuration
@@ -372,8 +373,18 @@ sub serialization {
     eval {
         # first do special xpath encoding of the parameter
         if ( %xslparam && scalar( keys %xslparam ) > 0 ) {
+            my @list;
+            foreach my $key ( keys %xslparam ) {
+                # check for multivalued parameters stored in a \0 separated string by CGI.pm :-/
+                if ( $xslparam{$key} =~ /\0/ ) {
+                    push @list, $key, (split("\0",$xslparam{$key}))[-1];
+                }
+                else {
+                        push @list, $key, $xslparam{$key};
+                }
+            }
             $res = $style->transform( $xml_doc,
-                                      XML::LibXSLT::xpath_to_string(%xslparam)
+                                      XML::LibXSLT::xpath_to_string(@list)
                                     );
         }
         else {
