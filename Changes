@@ -1,5 +1,10 @@
 Revision history for Perl extension CGI::XMLApplication
 
+1.1.1
+    + documentation fixes and updates :)
+    o tiny tiny patch related to "perl -w"
+    o made run() more flexible
+
 1.1.0
     tiny interface changes in this
     getStylesheet() obsoletes selectStylesheet()

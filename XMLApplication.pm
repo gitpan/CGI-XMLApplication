@@ -1,9 +1,9 @@
-# $Id: XMLApplication.pm,v 1.9 2001/12/10 23:12:13 cb13108 Exp $
+# $Id: XMLApplication.pm,v 1.11 2001/12/27 21:57:49 cb13108 Exp $
 
 package CGI::XMLApplication;
 
 # ################################################################
-# $Revision: 1.9 $
+# $Revision: 1.11 $
 # $Author: cb13108 $
 #
 # (c) 2001 Christian Glahn <christian.glahn@uibk.ac.at>
@@ -32,7 +32,7 @@ use Carp;
 
 # ################################################################
 
-$CGI::XMLApplication::VERSION = "1.1.0";
+$CGI::XMLApplication::VERSION = "1.1.1";
 
 # ################################################################
 # general configuration
@@ -43,7 +43,7 @@ $CGI::XMLApplication::VERSION = "1.1.0";
 @CGI::XMLApplication::panic = (
           'No Stylesheet specified! ',
           'Stylesheet is not available! ',
-          'Event not defined',
+          'Event not implemented',
           'Application Error',
          );
 
@@ -131,14 +131,15 @@ sub getStylesheetDir  { $_[0]->{XML_CGIAPP_STYLESDIR_}; }
 sub getStylesheetPath { $_[0]->{XML_CGIAPP_STYLESDIR_}; }
 
 # event control ###################################################
-sub addEvent          { my $s=shift; push @{$s->{XML_CGIAPP_HANDLER_}}, @_;}
-sub getEventList      { @{ $_[0]->{XML_CGIAPP_HANDLER_} }; }
 
+sub addEvent          { my $s=shift; push @{$s->{XML_CGIAPP_HANDLER_}}, @_;}
+
+sub getEventList      { @{ $_[0]->{XML_CGIAPP_HANDLER_} }; }
 sub testEvent         { return $_[0]->checkPush( $_[0]->getEventList() ); }
 
 sub deleteEvent       {
     my $self = shift;
-    if ( scalar @_ ){
+    if ( scalar @_ ){ # delete explicit events
         foreach ( @_ ) {
             debug_msg( 8, "[XML::CGIAppliction] delete event $_" );
             $self->delete( $_ );
@@ -146,7 +147,7 @@ sub deleteEvent       {
             $self->delete( $_.'.y' );
         }
     }
-    else {
+    else { # delete all
         foreach ( @{ $self->{XML_CGIAPP_HANDLER_} } ){
             debug_msg( 8, "delete event $_" );
             $self->delete( $_ );
@@ -163,6 +164,7 @@ sub sendEvent         {
 }
 
 # error handling #################################################
+# for internal use only ...
 sub setPanicMsg       { $_[0]->{XML_CGIAPP_PANIC_} = $_[1] }
 sub getPanicMsg       { $_[0]->{XML_CGIAPP_PANIC_} }
 
@@ -181,7 +183,7 @@ sub event_default { return 0 }
 sub checkPush {
     my $self = shift;
     my ( $pushed ) = grep {
-        length $self->param( $_ ) ||  length $self->param( $_.'.x')
+        defined $self->param( $_ ) ||  defined $self->param( $_.'.x')
     } @_;
     $pushed =~ s/\.x$//i if defined $pushed;
     return $pushed;
@@ -226,9 +228,9 @@ sub run {
 
     $self->event_init($ctxt);
 
-    if ( my $n = $self->checkPush( $self->getEventList() ) ) {
-        if ( my $func = $self->can( 'event_'.$n ) ) {
-            $sid = $self->$func($ctxt)
+    if ( my $n = $self->testEvent($ctxt) ) {
+        if ( my $func = $self->can('event_'.$n) ) {
+            $sid = $self->$func($ctxt);
         }
         else {
             $sid = -3;
@@ -329,6 +331,8 @@ sub serialization {
         }
         else {
             # now test old style interface
+            # will be removed with the next major release
+
             debug_msg( 5, "old style interface to select the stylesheet"  );
             $stylesheet = $self->selectStylesheet( $ctxt );
             if ( ref( $stylesheet ) ) {
@@ -471,7 +475,7 @@ content deliverment.
 As well CGI::XMLApplication is designed to support project management
 on code level. The class allows to split web applications into several
 simple parts. Through this most of the code stays simple and easy to
-maintain. Throughout the whole lifetime of a script
+maintain. Throughout the whole runtime of a script
 CGI::XMLApplication tries to keep the application stable. As well a
 programmer has not to bother about some of XML::LibXML/ XML::LibXSLT
 transformation pitfalls.
@@ -503,9 +507,9 @@ without effecting the application code anymore.
 Since the class uses the OO paradigma, it does not force anybody to
 implement a real life application with the complete overhead of more
 or less redundant code. Since most CGI-scripts are waiting for
-B<events>, which is usually the abstraction of a click of a submit
-button or an image, CGI::XMLApplication implements a simple event
-system, that allows to keep event related code as separated as
+B<events>, which is usually the code abstraction of a click of a
+submit button or an image, CGI::XMLApplication implements a simple
+event system, that allows to keep event related code as separated as
 possible.
 
 Therefore final application class is not ment to have a constructor
@@ -515,24 +519,82 @@ the call of a superclass constructor before the current constructor
 call is not default behavior in Perl. For that reason I decided to
 have special B<events> to enable the application to initialize
 correctly, excluding the danger of leaving important variables
-undefined. On the other hand this forces the programmer to implement
-scripts more problem orientated, rather than class focused.
+undefined. Also this forces the programmer to implement
+scripts more problem orientated, rather than class or content focused.
 
-Another design aspect for CGI::XMLApplication is the strict differentiation
-between CODE and PRESENTATION. IMHO this, in fact being one of the
-major problems in traditional CGI programming.  To implement this, the
-XML::LibXML and XML::LibXSLT modules are used.  Each CGI Script should
-generate an XML-DOM, that can be processed with a given stylesheet.
+Another design aspect for CGI::XMLApplication is the strict
+differentiation between CODE and PRESENTATION. IMHO this, in fact
+being one of the major problems in traditional CGI programming. To
+implement this, the XML::LibXML and XML::LibXSLT modules are used by
+default but may be replaced easily by any other XML/XSLT capable
+modules. Each CGI Script should generate an XML-DOM, that can be
+processed with a given stylesheet.
 
-B<Pay attention that XML-DOM means the DOM of XML::LibXML and not XML::DOM!>
+B<Pay attention: In this Document XML-DOM means the DOM of XML::LibXML
+and not XML::DOM!>
+
+=head2 Programflow of a CGI::XMLApplication
+
+The following Flowchart illustratrates how CGI::XMLApplication behaves
+during runtime. Also chart shows where specialized application code gets
+control during script runtime.
+
+  ------- CGI Script ------->|<--------- CGI::XMLApplication --------
+   .---------------------.    .--------------------.
+   | app-class creation  |--- | event registration |
+   `---------------------'    | registerEvents()   |
+                              `--------------------'
+   .------------------------.            |
+   | context initialization |------------'
+   |     ( optional )       |
+   `------------------------'
+              |
+   .-----------------------.  .------------------------.
+   | run() function called |--| application initialize |
+   `-----------------------'  |      event_init()      |
+                              `------------------------'
+                                          |
+                                 .--------'`------------.
+                                / event parameter found? \_
+                                \       testEvent()      / \
+                                 `--------.,------------'   |
+                                          |                 |
+                                      yes |              no |
+                                          |                 |
+                               .------------.  .------------------.
+                               | call event |  | call             |
+                               |  event_*() |  |  event_default() |
+                               `------------'  `------------------'
+                                          |                |
+                               .---------------------.     |
+                               | application cleanup |-----'
+                               |     event_exit()    |
+                               `---------------------'
+                                          |
+                                .---------'`------------.
+                              _/ avoid XML serialization \
+                             / \   skip_serialization()  /
+                            |   `---------.,------------'
+                            |             |
+                        yes |          no |
+                            |             |
+                            |  .--------------------------.
+                            |  | XML generation, XSLT     |
+                            |  | serialization and output |
+                            |  |     serialization()      |
+                            |  `--------------------------'
+    .---------------.       |             |
+    |      END      |-------+-------------'
+    `---------------'
 
 =head2 What are Events and how to catch them
 
-Most CGI handle the result of HTML-Forms or similar requests from
-clients.  Analouge to GUI Programming, CGI::XMLApplication calls this
-an B<event>.  Spoken in CGI/HTML-Form words, a CGI-Script handles the
-various situations a clients causes by pushing a submit button or
-follows a special link.
+Most CGI Scripts handle the result of HTML-Forms or similar requests
+from clients. Analouge to GUI Programming, CGI::XMLApplication calls
+this an B<event>. Spoken in CGI/HTML-Form words, a CGI-Script handles
+the various situations a clients causes by pushing a submit button or
+follows a special link. Because of this common events are thrown by
+arguments found in the CGI's query string.
 
 An event of CGI::XMLApplication has the same B<name> as the input
 field, that should cause the event. The following example should
@@ -547,48 +609,65 @@ name B<dummy> for your script, CGI::XMLApplication will try to call the
 function B<event_dummy()>. The script module to handle the dummy event
 would look something like the following code:
 
-    use CGI::XMLApplication;
-    @ISA = qw(CGI::XMLApplication);
+ # Application Module
+ package myApp;
 
-    sub registerEvents { qw( dummy ); } # the handler list
+ use CGI::XMLApplication;
+ @ISA = qw(CGI::XMLApplication);
 
-    # ...
+ sub registerEvents { qw( dummy ); } # list of event names
 
-    sub event_dummy {
-       my ( $self, $context ) = @_;
+ # ...
 
-       # your event code goes here
+ sub event_dummy {
+     my ( $self, $context ) = @_;
 
-       return 0;
-    }
+     # your event code goes here
+
+     return 0;
+ }
 
 During the lifecircle of a CGI script, often the implementation starts
 with ordinary submit buttons, which get often changed to so called
-input images, to fit into the UI of the Website. CGI::XMLApplication
-will recognize such changes, so the code has not to be changed if the
-presentation of the form changes. Therefore there is no need to
+input images, to fit into the UI of the Website. One does not need to
+change the code to make the scripts fit to these changes;
+CGI::XMLApplication already did it. The code has not to be changed if
+the presentation of the form changes. Therefore there is no need to
 declare separate events for input images. E.g. an event called evname
-makes CGI::XMLApplication look for evname B<and> evname.x in the
+makes CGI::XMLApplication tests if evname B<or> evname.x exist in the
 querystring.
 
-Some programmer are suspious which event CGI::XMLApplication will
-call.  The function B<testEvent> checks all events if one is valid and
-returns the name of event. Much more important is the possibility to
-send B<error events> from the event_init() function. This is done with
-the B<sendEvent> Function. This will set a new parameter to the CGI's
-querystring after removing all other events. B<One can only send
-events that are already registred!>.
+So a perl artist can implement and test his code without caring if the
+design crew have done their job, too ;-)
 
-CGI::XMLApplication doesn't implement an event queqe yet. For GUI
-programmers this seems like a unnessecary restriction. I terms of CGI
-it makes more sense to think of a script as a program, that is only
-able to scan its event queqe only once during runtime. The only chance
-to stop the script from handling a certain event is to send a new
-event from the event_init() function. This function is always called
-at first from the run method. If another event uses the sendEvent
-function, the event will get lost.
+In many cases an web application is also confronted with events that
+can not be represented in with querystring arguments. For these cases
+CGI::XMLApplication offers the possibility to send B<special events>
+from the B<event_init()> function for example in case of application
+errors. This is done with the B<sendEvent()> Function. This will set a
+new parameter to the CGI's querystring after removing all other
+events. B<One can only send events that are already registred!>.
+
+Although a sendEvent function exists, CGI::XMLApplication doesn't
+implement an event queqe. For GUI programmers this seems like a
+unnessecary restriction. In terms of CGI it makes more sense to think
+of a script as a program, that is only able to scan its event queqe
+only once during runtime and stopped before the next event can be
+thrown. The only chance to stop the script from handling a certain
+event is to send a new event or delete this (or even all) events from
+inside the event_init() function. This function is always called at
+first from the run method. If another event uses the sendEvent
+function, the call will have no effect.
 
 =over 4
+
+=item method registerEvents
+
+This method is called by the class constructor - namely
+CGI::XMLApplication's B<new()> function . Each application should
+register the events it likes to handle with this function. It should
+return an array of eventnames such as eg. 'remove' or 'store'. This
+list is used to find which event a user caused on the client side.
 
 =item method run
 
@@ -608,10 +687,14 @@ implemented, will not cause any harm.
 
 =head2 The Event System
 
-Commonly scripts that make use of CGI::XMLApplication, will not bother
-about the B<run> function anymore. All functionality is kept inside
-B<event>- and (pseudo-)B<callback functions>. This forces one to
-implement much more strict code than common perl would allow. What
+A CGI::XMLApplication is split into two main parts: 1) The executable
+script called by the webserver and 2) the application module which has
+to be loaded, initialized and called by the script.
+
+Commonly applications that make use of CGI::XMLApplication, will not
+bother about the B<run> function too much. All functionality is kept
+inside B<event>- and (pseudo-)B<callback functions>. This forces one
+to implement much more strict code than common perl would allow. What
 first looks like a drawback, finally makes the code much easier to
 understand, maintain and finally to extend.
 
@@ -629,10 +712,10 @@ to be written inside its own module.
 An event may return a integer value. If the event succeeds (no fatal
 errors, e.g. database errors) the explicit or common event function
 should return a value greater or eqal than 0. If the value is less
-than 0, CGI::XMLApplication assumes a script panic, and will not try
-to render a stylesheet or DOM.
+than 0, CGI::XMLApplication assumes an application panic, and will not
+try to generate a DOM or render it with a stylesheet.
 
-There are defined panic levels:
+There are 4 defined panic levels:
 
 =over 4
 
@@ -646,7 +729,7 @@ Stylesheet not available
 
 =item -3
 
-Event not defined
+Event not implemented
 
 =item -4
 
@@ -657,64 +740,65 @@ Application panic
 Apart from B<Application Panic> the panic levels are set
 internally. An Application Panic should be set if the application
 catches an error, that does not allow any XML/XSLT processing. This
-can be for example, that any required perl modules are not installed
-on the system.
+can be for example, that a required perl module is not installed on
+the system.
 
-If the B<getStylesheet> is implemented the CGI::XMLApplication will
-assume the returned value either as a filename of a stylesheet or as a
-XML DOM representation of the same. If Stylesheets are stored in a
-file accessable from the , one should set the common path for the
-stylesheets and let B<CGI::XMLApplication> do the parsing job.
+To make it clear: If CGI::XMLApplication throws a panic, the
+application is broken, not completely implemented or stylesheets are
+missing or broken. Application panics are ment for debugging purposes
+and to avoid I<Internal Server Errors>. They are B<not> ment as a
+replacement of a propper error handling!
 
-In cases the stylesheet is already present as a string (e.g. as a
-result of a database query) one may pass this string directly to
-B<CGI::XMLApplication>.
+But how does CGI::XMLApplication know about the correct event handler?
 
-I<selectStylesheet> is an alias for I<getStylesheet> left for
-compatibility reasons.
+One needs to register the names of the events the application handles.
+This is done by implmenting a registerEvents() function that simply
+returns an B<array> of event names. Through this function one prepares
+the CGI::XMLApplication to catch the listed names as events from the
+query string the client browser sends back to the
+script. CGI::XMLApplication tries to call a event handler if a name of
+a registred event is found. The coresponding function-name of an event
+has to have the following format:
 
-If none of these stylesheet selectors succeeds the I<Stylesheet
-missing> panic code is thrown. If the parse of the XML fails
-I<Stylesheet not available> is thrown. The latter case will also give
-some informations where the stylesheet selection failed.
+ event_<eventname>
 
-So how to tell the system about the available event handler?
+E.g. event_init handles the init event described below.
 
-There are two ways to tell the system which events are to be handled.
+Each event has a single Parameter, the context. This is a hash
+reference, where the user can store whatever needed. This context is
+usefull to pass scriptwide data between callbacks and event functions
+around. The callback is even available and useable if the script does
+not initialize the application context as earlier shown in the program
+flow chart.
 
-You can tell the system the events the client browser sends back to
-the script only. CGI::XMLApplication tries to call a event handler if this
-happens. The function name of an event handler has to have the
-following format:
+If such a function is not implemented in the application module,
+CGI::XMLApplication sets the I<Event not implemented> panic state.
 
- event_<eventname>.
+All events have to return an integer that tells about their execution
+state as already described.
 
-E.g. event_init handles the init event described below. All events
-that handle client responses (including the default event) should
-return the position of the stylesheet in the stylesheet list passed
-with setStylesheetList().
+By default CGI::XMLApplication does not test for other events if it
+already found one. The most significant event is the first name of an
+event found in the query string - all other names are simply ignored.
+One may change this behaviour by overriding the B<testEvent()>
+function.
+
+But still it is a good idea to choose the event names carefully and do
+not mix them with ordinary datafield names.
 
 =over 4
-
-=item method registerEvents
-
-This method is called by the class constructor. Each application
-should register the events it like to handle. It should return an
-array of eventnames such as eg. 'remove' or 'store'. This list is used
-to find which event a user caused on the client side.
 
 =item function testEvent
 
 If it is nesseccary to check which event is relevant for the current
 script one can use this function to find out in event_init(). If this
-function returns undef, the default event is active, otherwise it
+function returns I<undef>, the default event is active, otherwise it
 returns the eventname as defined by B<registerEvents>.
 
-=item method addEvents LIST
-
-addEvents() also takes a list of events the application will
-handle. Contrary to setEventList() this does not override previously
-defined events.
+In case one needs a special algorithm for event selection one can
+override this function. If done so, one can make use of the
+application context inside this function since it is passed to
+B<testEvent()> by the B<run()> function.
 
 =item method sendEvent SCALAR
 
@@ -727,24 +811,30 @@ not even get the default output.
 This can only be done during the event_init() method call. Some coders
 would prefer the constructor, which is not a very good idea in this
 case: While the constructor is running, the application is not
-completely initialized. This fact can be only ashured in the
-event_init function. Therefore all script specific errorhandling and
+completely initialized. This can be only ashured in the event_init
+function. Therefore all application specific errorhandling and
 initializing should be done there.
 
 B<sendEvent> only can be called from event_init, because any
-CGI::XMLApplication script will handle just one event, plus the
-B<init> and the B<exit event>. If B<sendEvent> is called from another
-event than B<event_init()> it will take not effect.
+CGI::XMLApplication will handle just one event, plus the B<init> and
+the B<exit event>. If B<sendEvent> is called from another event than
+B<event_init()> it will take not effect.
 
 It is possible through sendEvent() to keep the script logic clean.
 
 Example:
 
+  package myApp;
+  use CGI::XMLApplication;
+  @ISA = qw(CGI::XMLApplication);
+
   sub registerEvents { qw( missing ... ) ; }
 
+  # event_init is an implicit event
   sub event_init {
      my ( $self, $context ) = @_;
-     if ( not length $self->param( $paramname ) ){
+     if ( not ( defined $self->param( $paraname ) && length $self->param( $paramname ) ) ){
+        # the parameter is not correctly filled
         $self->sendEvent( 'missing' );
      }
      else {
@@ -752,6 +842,7 @@ Example:
     ... some more initialization ...
 
      }
+     return 0;
   }
 
   ... more code ...
@@ -772,19 +863,9 @@ Example:
 
 CGI::XMLApplication knows three implicit events which are more or less
 independent to client responses: They are 'init', 'exit', and
-'default'.
-
-If there is need to override one of these handler -- and I hope there
-will be ;) -- the particular event should call the related event
-handler of its superclass as first action. This might be skipped, if
-the function should do everything right by itself.  I prefere the
-first technique, because it is more secure and makes things easier to
-debug.
-
-Each event has a single Parameter, the context. This is a hash
-reference, where the user can store whatever needed. This context is
-usefull to pass scriptwide data between callbacks and event functions
-around.
+'default'. These events already exist for any
+CGI::XMLApplication. They need not to be implemented separatly if they
+make no sense for the application.
 
 =over 4
 
@@ -809,112 +890,26 @@ if no event matched.
 
 =back
 
-=head2 Extra Methods
 
-There are some extra callbacks may implemented:
+=head2 the XML Serialization
 
-=over 4
+The presentation is probably the main part of a CGI script. By using
+XML and XSLT this can be done in a standartised manner. From the
+application view all this can be isolated in a separate subsystem as
+well. In CGI::XMLApplication this subsystem is implemented inside the
+B<serialize()> function.
 
-=item * selectStylesheet
+For XML phobic perl programmers it should be cleared, that
+CGI::XMLApplication makes real use of XML/XSLT functionalty only
+inside this function. For all code explained above it is not required
+to make use of XML at all.
 
-=item * getDOM
+The XML serialization subsystem of CGI::XMLApplication tries to hide
+most of non application specific code from the application programmer.
 
-=item * registerEvents
-
-=item * setHttpHeader
-
-=item * getXSLTParameter
-
-=back
-
-These methods are used by the serialization function, to create the
-content related datastructure. Like event functions these functions
-have to be implemented as class member, and like event funcitons the
-functions will have the context passed as the single parameter.
-
-B<selectStylesheet()> has to return a valid path/filename for the
-stylesheet requested.
-
-B<getDOM()> has to return the DOM later used by the stylesheet
-processor.
-
-the B<registerEvents> is slightly different implemented than other
-event or callback functions. It will not recieve any context data,
-since it is called even before the B<run> function, that creates the
-context. It should return an array containing the names of the
-explicit events handled by the script.
-
-B<setHttpHeader> should return a hash of headers (but not the
-Content-Type). This can be used to set the I<nocache> pragma, to set
-or remove cookies. The keys of the hash must be the same as the named
-parameters of CGI.pm's header method.
-
-The last function B<getXSLTParameter> is called by B<serialization>
-just before the xslt processing is done. This alows to pass up to 256
-parameters to the processor. This function should return a hash or
-undefined. The hash will be transformed to fit the XML::LibXSLT
-interface, so one can simply pass a hash of strings to
-CGI::XMLApplication.
-
-=head2 Helperfunctions for internal use
-
-=over 4
-
-=item function checkPush LIST
-
-This function searches the query string for a parameter with the
-passed name. The implementation is "imagesave" meaning there is no
-change in the code needed, if you switch from input.type=submit to
-input.type=image or vv. The algorithm tests wheter a full name is
-found in the querystring, if not it tries tests for the name expanded
-by a '.x'. In context of events this function interprets each item
-part in the query string list as an event. Because of that, the
-algorithm returns only the first item matched.
-
-If you use the event interface on this function, make sure, the
-HTML-forms pass unique events to the script. This is neccessary to
-avoid confusing behaviour.
-
-=item function passthru( $boolean )
-
-Since there are cases one needs to pass an untransformed XML Document
-directly to the calling client this function allows to set such
-directive for the serialization function from within the application.
-Optional the function takes a single parameter, which shows if the
-function should be used in set rather than get mode. If the parameter
-is ommited the function returns the current passthru mode. Where TRUE
-(1) means the XML DOM should be passed directly to the client and
-FALSE (0) marks that the DOM must get processed first.
-
-Additionally this function has a second FALSE state which is when
-returned I<undef>. In such case the passthru state is not set.
-
-If an application sets passthru by itself any external 'passthru'
-parameter will be lost. This is usefull if one likes to avoid, someone
-can fetch the plain (untransformed) XML Data.
-
-=item function serialization()
-
-This method renders the data stored in the DOM with
-the stylesheet returned by the event handler. You should override
-this function if you like to use a different way of displaying your
-data.
-
-For debugging purposes the parameter B<passthru> can be used to directly
-pass the stringified DOM-tree to the client. (Quite useful, as I realized. :) )
-
-To avoid the call of B<serialization()> one should set B<skipSerialization>.
-
-   event_default {
-      my $self = shift;
-      # avoid serialization call
-      $self->skipSerialization( 1 ); # use 0 to unset
-
-      # now you can directly print to the client, but don't forget the
-      # headers.
-
-      return 0;
-   }
+This method renders the data stored in the DOM with the stylesheet
+returned by the event handler. You should override this function if
+you like to use a different way of displaying your data.
 
 If the serialization should be skipped, CGI::XMLApplication will not
 print any headers. In such case the application is on its own to pass
@@ -942,6 +937,166 @@ The algorithm used by serialization is simple:
 
 If errors occour on a certain stage of serialization, the application
 is stopped and the generated error messages are returned.
+
+CGI::XMLApplication provides four pseudo-callbacks, that are used to
+get the application specific information during serialization. In
+order of being called by CGI::XMLApplication::serialization() they
+are:
+
+=over 4
+
+=item * getDOM
+
+=item * setHttpHeader
+
+=item * getStylesheet
+
+=item * getXSLTParameter
+
+=back
+
+In fact only getStylesheet has to be implemented. In most cases it
+will be a good idea to provide the getDOM function as well. The other
+functions provider a interface to make the CGI output more
+generic. For example one can set cookies or pass XSL parameters to
+XML::LibXSLT's xsl processor.
+
+These methods are used by the serialization function, to create the
+content related datastructure. Like event functions these functions
+have to be implemented as class member, and like event funcitons the
+functions will have the context passed as the single parameter.
+
+=over 4
+
+=item getDOM()
+
+getDOM() should return the application data as
+XML-DOM. CGI::XMLApplication is quite lax if this function does not
+return anything - its simply assumed that an empty DOM should be
+rendered. In this case a dummy root element is created to avoid error
+messages from XML::LibXSLT.
+
+=item setHttpHeader()
+
+B<setHttpHeader> should return a hash of headers (but not the
+Content-Type). This can be used to set the I<nocache> pragma, to set
+or remove cookies. The keys of the hash must be the same as the named
+parameters of CGI.pm's header method. One does not need to care about
+the output of these headers, this is done by CGI::XMLApplication
+automaticly.
+
+The content type of the returned data is usually not required to be
+set this way, since the XSLT processor knows about the content type,
+too.
+
+=item getStylesheet()
+
+If the B<getStylesheet> is implemented the CGI::XMLApplication will
+assume the returned value either as a filename of a stylesheet or as a
+XML DOM representation of the same. If Stylesheets are stored in a
+file accessable from the , one should set the common path for the
+stylesheets and let B<CGI::XMLApplication> do the parsing job.
+
+In cases the stylesheet is already present as a string (e.g. as a
+result of a database query) one may pass this string directly to
+B<CGI::XMLApplication>.
+
+I<selectStylesheet> is an alias for I<getStylesheet> left for
+compatibility reasons.
+
+If none of these stylesheet selectors succeeds the I<Stylesheet
+missing> panic code is thrown. If the parsing of the stylesheet XML
+fails I<Stylesheet not available> is thrown. The latter case will also
+give some informations where the stylesheet selection failed.
+
+B<selectStylesheet()> has to return a valid path/filename for the
+stylesheet requested.
+
+=item getXSLTParameter()
+
+This function allows to pass a set of parameters to XML::LibXSLT's xsl
+processor. The function needs only to return a hash and does not need
+to encode the parameters.
+
+The function is the last callback called before the XSLT processing is
+done.
+
+=back
+
+=head2 Flow Control
+
+Besides the sendEvent() function does CGI::XMLApplication provide to
+other functions that allow to controll the flow of the application.
+
+These two functions are related to the XML serialization and have not
+affect to the event handling.
+
+
+=over 4 
+
+=item passthru()
+
+Originally for debugging purposes CGI::XMLApplication supports the
+B<passthru> argument in the CGI query string. It can be used to
+directly pass the stringified XML-DOM to the client.
+
+Since there are cases one needs to decide from within the application
+if an untransformed XML Document has to be returned, this function was
+introduced.
+
+If is called without parameters B<passthru()> returns the current
+passthru state of the application. E.g. this is done inside
+B<serialization()>. Where TRUE (1) means the XML DOM should be passed
+directly to the client and FALSE (0) marks that the DOM must get
+XSL transformed first.
+
+Optional the function takes a single parameter, which shows if the
+function should be used in set rather than get mode. The parameter is
+interpreted as just described.
+
+If an application sets passthru by itself any external 'passthru'
+parameter will be lost. This is usefull if one likes to avoid, someone
+can fetch the plain (untransformed) XML Data.
+
+
+=item skipSerialization()
+
+To avoid the call of B<serialization()> one should set B<skipSerialization>.
+
+   event_default {
+      my $self = shift;
+      # avoid serialization call
+      $self->skipSerialization( 1 ); # use 0 to unset
+
+      # now you can directly print to the client, but don't forget the
+      # headers.
+
+      return 0;
+   }
+
+=back
+
+=head2 Helperfunctions for internal use
+
+=over 4
+
+=item function checkPush LIST
+
+This function searches the query string for a parameter with the
+passed name. The implementation is "imagesave" meaning there is no
+change in the code needed, if you switch from input.type=submit to
+input.type=image or vv. The algorithm tests wheter a full name is
+found in the querystring, if not it tries tests for the name expanded
+by a '.x'. In context of events this function interprets each item
+part in the query string list as an event. Because of that, the
+algorithm returns only the first item matched.
+
+If you use the event interface on this function, make sure, the
+HTML-forms pass unique events to the script. This is neccessary to
+avoid confusing behaviour.
+
+This function is used by testEvent() so if it is required to change
+the way CGI::XMLApplication selects events, override that function.
 
 =item method panic SCALAR
 
@@ -1006,11 +1161,10 @@ structure Vars returns.
 
 =head2 some extra functions for stylesheet handling
 
-CGI::XMLApplication had originally a rather strict design for XML/XSL
-integration, therefore there are some specific functions to manipulate
-data for such a system. The following functions left in the package,
-so older applications does not have to be rewritten. Now I recommend,
-to use the callback/ overriding system.
+The getStylesheet() function should return either a filename or a
+stringnyfied XSL-DOM. For the firstcase it can be a restriction to
+return the fully qualified path. The following functions allow to set
+the stylesheetpath systemwide.
 
 =over 4
 
@@ -1020,9 +1174,9 @@ alias for B<setStylesheetPath>
 
 =item method setStylesheetPath DIRNAME
 
-This method is for telling the application where the stylesheets can be found.
-If you keep your stylesheets in the same directory as your script
--- generally a bad idea -- you might leave this untouched.
+This method is for telling the application where the stylesheets can
+be found. If you keep your stylesheets in the same directory as your
+script -- IMHO a bad idea -- you might leave this untouched.
 
 =item function getStylesheetPath
 
@@ -1042,4 +1196,4 @@ Christian Glahn, christian.glahn@uibk.ac.at
 
 =head1 VERSION
 
-1.0.2
+1.1.1
