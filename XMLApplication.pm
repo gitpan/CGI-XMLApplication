@@ -1,10 +1,10 @@
-# $Id: XMLApplication.pm,v 1.11 2001/12/27 21:57:49 cb13108 Exp $
+# $Id: XMLApplication.pm,v 1.18 2002/10/30 12:16:10 c102mk Exp $
 
 package CGI::XMLApplication;
 
 # ################################################################
-# $Revision: 1.11 $
-# $Author: cb13108 $
+# $Revision: 1.18 $
+# $Author: c102mk $
 #
 # (c) 2001 Christian Glahn <christian.glahn@uibk.ac.at>
 # All rights reserved.
@@ -32,7 +32,7 @@ use Carp;
 
 # ################################################################
 
-$CGI::XMLApplication::VERSION = "1.1.1";
+$CGI::XMLApplication::VERSION = "1.1.2";
 
 # ################################################################
 # general configuration
@@ -141,7 +141,7 @@ sub deleteEvent       {
     my $self = shift;
     if ( scalar @_ ){ # delete explicit events
         foreach ( @_ ) {
-            debug_msg( 8, "[XML::CGIAppliction] delete event $_" );
+            debug_msg( 8, "[XML::CGIApplication] delete event $_" );
             $self->delete( $_ );
             $self->delete( $_.'.x' );
             $self->delete( $_.'.y' );
@@ -224,7 +224,7 @@ sub getParamHash {
 sub run {
     my $self = shift;
     my $sid = -1;
-    my $ctxt = {@_}; # context hash
+    my $ctxt = (!@_ or scalar(@_) > 1) ? {@_} : shift; # nothing, hash or context object
 
     $self->event_init($ctxt);
 
@@ -248,8 +248,8 @@ sub run {
         # check if we wanna redirect
         if ( my $uri = $self->redirectToURI() ) {
             my %h = $self->setHttpHeader( $ctxt );
-            print $self->header( %h );
-            print $self->redirect( -uri=>$uri ) . "\n\n";
+            $h{-uri} = $uri;
+            print $self->SUPER::redirect( %h ) . "\n\n";
         }
         elsif ( not $self->skipSerialization() ) {
             # sometimes it is nessecary to skip the serialization
@@ -461,7 +461,7 @@ CGI::XMLApplication -- Object Oriented Interface for CGI Script Applications
   # either this for simple scripts
   $script->run();
   # or if you need more control ...
-  $script->run(%context_hash);
+  $script->run(%context_hash); # or a context object
 
 =head1 DESCRIPTION
 
@@ -675,9 +675,9 @@ Being the main routine this should be the only method called by the
 script apart from the constructor. All events are handled inside the
 method B<run()>.  Since this method is extremly simple and transparent
 to any kind of display type, there should be no need to override this
-function. One can pass a context hash, to pass external or prefetched
-information to the application. This context will be available and
-acessable in all events and most extra functions.
+function. One can pass a context hash or context object, to pass external
+or prefetched information to the application. This context will be
+available and acessable in all events and most extra functions.
 
 This function does all event and serialization related work. As well
 there is some validation done as well, so catched events, that are not
@@ -764,12 +764,12 @@ has to have the following format:
 
 E.g. event_init handles the init event described below.
 
-Each event has a single Parameter, the context. This is a hash
-reference, where the user can store whatever needed. This context is
-usefull to pass scriptwide data between callbacks and event functions
-around. The callback is even available and useable if the script does
-not initialize the application context as earlier shown in the program
-flow chart.
+Each event has a single Parameter, the context. This can be an unblessed
+hash reference or an object, where the user can store whatever needed.
+This context is useful to pass scriptwide data between callbacks and 
+event functions around. The callback is even available and useable if
+the script does not initialize the application context as earlier shown
+in the program flow chart.
 
 If such a function is not implemented in the application module,
 CGI::XMLApplication sets the I<Event not implemented> panic state.

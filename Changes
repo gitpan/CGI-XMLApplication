@@ -1,5 +1,11 @@
 Revision history for Perl extension CGI::XMLApplication
 
+1.1.2
+    + changed run() to accept a hash reference or an object in 
+      addition to a plain hash as context
+    o redirection handling fix
+    o documentation fixes (thanks to Christian Kauhaus)
+
 1.1.1
     + documentation fixes and updates :)
     o tiny tiny patch related to "perl -w"

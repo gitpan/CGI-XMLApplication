@@ -19,7 +19,7 @@ use lib qw( ../../  );
   # we could do some tricks with CGI.pm functions before run ...
 
   # and pass our prepared information to run().
-  $script_class->run( %config );
+  $script_class->run( \%config );
 }
 
 

@@ -16,7 +16,7 @@ use lib qw( ../../  );
 
   my $script_class = new $package;
   $script_class->setStylesheetPath( "your/path" );
-  $script_class->run(%ctxt);
+  $script_class->run(\%ctxt);
 }
 
 
