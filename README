@@ -1,0 +1,132 @@
+CGI::XMLApplication
+
+How To Install?
+
+The installation should be perlish :) 
+
+perl Makefile.PL
+make 
+make test
+make install
+
+CGI::XMLApplication requires the XML::LibXML and XML::LibXSLT module.
+Both modules are available on CPAN.
+
+What is CGI::XMLApplication?
+
+Perl modules to implement OO CGI-Scripts with XML capabilities in
+Perl similar to CGI::Application. It is not related to CGI::XML 
+(than it would be CGI::XML::Application) ;) and does not include 
+any features of it (yet)
+
+CGI::XMLApplication is not a simple add on to CGI.pm! I think there
+is no simple and fast way to convert existing CGI scripts. This is
+basicly because of the gap of main concepts and paradigmata between
+CGI.pm and CGI::XMLApplication, although CGI.pm is the SUPER class of
+CGI::XMLApplication. 
+
+Why is there broken english?
+
+I don't need english for living, but I can speak "all right", but 
+writing is something different :) 
+I will try to fix the broken section as soon as possible, so I hope 
+this situation does not last a long time ;) 
+ 
+The problems behind the scene.
+
+While most CGI-Scripts are embedded into larger web based applications
+the scripts themselves usually do not represent this fact. The
+evolutionary grown mosaic of an traditional CGI-Script assembly style
+application cannot easily be extended with certain features, relevant
+to the application in general.
+
+CGI::XMLApplication is an application framework to implement
+CGI-Scripts in Perl without the overhead of a complete Perl
+application. The framework should hide most of the important, but
+redundant code of a Perl CGI-Application shared by several
+scripts. Since CGI.pm is a very powerfull module to implement CGI
+scripts it is used as a super class of CGI::XMLApplication. This
+should make the implementation of new scripts usinge this class easy,
+since the whole Interface of CGI.pm is still available. There are some
+conceptual changes, basicly related to the response that reflect
+concepts of XML/XSLT. This has the effect, that most output functions
+of CGI.pm are not very usefull if used from this class ;)
+
+The module have especially been written to enable Perl newbees to
+write full featured CGI-Scripts and CGI applications. To make things
+more easier readable for people, the CGI:OO module forces the
+programmer to implement the application rather problem-orientated than
+programm-code-orientated.
+
+Using such concepts makes it much easier for people, who want to
+understand the code -- and usually they are forced to --, to follow
+the structure of the application.  In larger software projects this is
+a very important aspect.
+
+Using the object and problem orientated application programming
+paradigma makes it possible to develop a certain (web based)
+application aloing its structure, not along the restraints of its
+primary programming language.  The CGI::XMLApplication concept opens the
+possiblity to port the application to another programming language
+(like C++ or Java) more easily. This aspect is quite important if a
+port has to be done -- be it for performance or any other reasons.
+
+Why should I use it?
+
+If you are planning to implement a single script CGI application, that
+should do a very simple job, CGI::XMLApplication is probably not what
+you are looking for. More commonly Netslaves like us are forced to
+implement fully grown web based applications consisting of a set of
+more or less isolated CGI-Scripts. Each script having a default
+behaviour, for example doing something after an event like a button
+being pushed or a link beeing followed by the client.  If you know a
+little about CGI-Scripts, you may already have recognized that scripts
+look amazingly similar in their principal function-set. Most of the
+scripts may have quite similar implementations of the same basic
+requirements they should fulfill. That being a potential source for
+redundancy and painful hours debugging.  This is there
+CGI::XMLApplication comes in -- a problem oriented application
+framework to avoid redundancies and to facilitate easier portabilty of
+Perl based CGI applications.
+
+Where is the difference to CGI::Application?
+
+This question is quite important, since CGI::Application was discussed
+on the Web a lot at the time I wrote this module. The main difference
+I see, is that CGI::XMLApplication includes the XML paradigma of
+dispairing data and datapresentation.
+
+The second major difference is, that a perl programmer does not have 
+that much freedom on the programm structure. Yes, CGI::XMLApplication
+is rather strict compared to what perl is known for ;) I realized in 
+my day to day work, this freedom causes a lot of problems in midsize 
+or large W3 application projects.
+
+The less obvious difference is how the data presentation is
+done. While CGI::Application uses the "propritary" perl format for
+data presentation, CGI::XMLApplication uses by default XML and XSLT,
+which are a web standard. This leaves the oportunity to change the
+programm code and even the programming language, but leaves the data
+presentation untouched. As well new output formats can be added,
+without changeing the entire script code. This is what project
+managers really like to hear ;)
+
+Classical CGI scripts will have most allways quite a lot print calls
+(or at least some thing similar). All these calls are related to the
+field of data persentation, usually a job done by designers or HTML
+programmers. Both modules CGI.pm and CGI::Application include such --
+what I call -- formating functions. A perl coder using
+CGI::XMLApplication does not need to care about the data presentation
+a client will finally see. Therefore formated output calls as they are
+used in CGI.pm and CGI::Application doesn't make much sense with
+CGI::XMLApplication. The data presentation itself is done through XSLT
+Stylesheets. The script has to care only about the data, which should
+be kept in a XML-DOM. So a script programmer provides a set of data to
+a stylesheet and does not care about the output anymore (which is done
+by the class btw.)
+
+As well CGI::XMLApplication implements a more strict application
+structure, than CGI::Application. CGI::XMLApplication handles script
+initialization, functionality, cleanup and data output is strictly
+separated parts of the script.
+
