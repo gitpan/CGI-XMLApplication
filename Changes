@@ -1,6 +1,15 @@
 Revision history for Perl extension CGI::XMLApplication
 
-1.0
+1.0.2
+    THIS VERSION FIXES TWO MAJOR BUGS INTRODUCED WITH 1.0.0
+    + getEvent Bug FIXED
+    + $stylesheet Bug FIXED
+
+1.0.1
+    + passthru() function
+    + some documentation
+
+1.0.0
     + cleaned the structure
     + uses strict
     + better code to handle binary response data

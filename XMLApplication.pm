@@ -1,9 +1,9 @@
-# $Id: XMLApplication.pm,v 1.5 2001/11/16 23:33:12 cb13108 Exp $
+# $Id: XMLApplication.pm,v 1.8 2001/12/06 02:55:51 cb13108 Exp $
 
 package CGI::XMLApplication;
 
 # ################################################################
-# $Revision: 1.5 $
+# $Revision: 1.8 $
 # $Author: cb13108 $
 #
 # (c) 2001 Christian Glahn <christian.glahn@uibk.ac.at>
@@ -31,7 +31,8 @@ use Carp;
 @CGI::XMLApplication::ISA = qw( CGI );
 
 # ################################################################
-$CGI::XMLApplication::VERSION = "1.0.0";
+
+$CGI::XMLApplication::VERSION = "1.0.2";
 
 # ################################################################
 # general configuration
@@ -96,6 +97,20 @@ sub skipSerialization{
     return $self->{CGI_XMLAPP_SKIP_TRANSFORM};
 }
 
+# returns boolean
+sub passthru {
+    my $self = shift;
+    if ( scalar @_ ) {
+        $self->{CGI_XMLAPP_PASSXML} = shift;
+        $self->delete( 'passthru' ); # delete any passthru parameter
+    }
+    elsif ( length $self->param( "passthru" ) ) {
+        $self->{CGI_XMLAPP_PASSXML} = 1    ;
+        $self->delete( 'passthru' );
+    }
+    return $self->{CGI_XMLAPP_PASSXML};
+}
+
 sub redirectToURI {
     my $self = shift;
     $self->{CGI_XMLAPP_REDIRECT} = shift if scalar @_;
@@ -115,7 +130,7 @@ sub getStylesheetPath { $_[0]->{XML_CGIAPP_STYLESDIR_}; }
 sub addEvent          { my $s=shift; push @{$s->{XML_CGIAPP_HANDLER_}}, @_;}
 sub getEventList      { @{ $_[0]->{XML_CGIAPP_HANDLER_} }; }
 
-sub testEvent         { return $_[0]->checkPush( $_[0]->getEvent() ); }
+sub testEvent         { return $_[0]->checkPush( $_[0]->getEventList() ); }
 
 sub deleteEvent       {
     my $self = shift;
@@ -207,7 +222,7 @@ sub run {
 
     $self->event_init($ctxt);
 
-    if ( my $n = $self->checkPush( $self->getEvent() ) ) {
+    if ( my $n = $self->checkPush( $self->getEventList() ) ) {
         if ( my $func = $self->can( 'event_'.$n ) ) {
             $sid = $self->$func($ctxt)
         }
@@ -263,7 +278,7 @@ sub serialization {
         $xml_doc = XML::LibXML::Document->new;
     }
 
-    if( length  $self->param( 'passthru' ) ) {
+    if( $self->passthru() == 1 ) {
         # this is a useful feature for DOM debugging
         debug_msg( 10, "attempt to pass the DOM to the client" );
         $header{-type} = 'text/xml';
@@ -274,7 +289,6 @@ sub serialization {
 
     my $stylesheet = $self->selectStylesheet( $ctxt );
     my ( $xsl_dom, $style, $res );
-
     my $parser = XML::LibXML->new();
     my $xslt   = XML::LibXSLT->new();
 
@@ -312,7 +326,7 @@ sub serialization {
     my %xslparam = $self->getXSLParameter( $ctxt );
     eval {
         # first do special xpath encoding of the parameter
-        if ( scalar %xslparam > 0) {
+        if ( %xslparam && scalar( %xslparam ) > 0) {
             $res = $style->transform( $xml_doc,
                                       XML::LibXSLT::xpath_to_string(%xslparam)
                                     );
@@ -329,8 +343,8 @@ sub serialization {
 
     # override content-type with the correct content-type
     # of the style (is this ok?)
-    $header{-type}    = $stylesheet->media_type;
-    $header{-charset} = $stylesheet->output_encoding;
+    $header{-type}    = $style->media_type;
+    $header{-charset} = $style->output_encoding;
 
     debug_msg( 10, "serialization do output" );
     # we want nice xhtml and since the output_string does not the
@@ -339,7 +353,7 @@ sub serialization {
 
     debug_msg( 9, "serialization get output string" );
     eval {
-        $out_string =  $stylesheet->output_string( $res );
+        $out_string =  $style->output_string( $res );
     };
     debug_msg( 10, "serialization rendered output" );
     if ( $@ ) {
@@ -794,6 +808,24 @@ If you use the event interface on this function, make sure, the
 HTML-forms pass unique events to the script. This is neccessary to
 avoid confusing behaviour.
 
+=item function passthru( $boolean )
+
+Since there are cases one needs to pass an untransformed XML Document
+directly to the calling client this function allows to set such
+directive for the serialization function from within the application.
+Optional the function takes a single parameter, which shows if the
+function should be used in set rather than get mode. If the parameter
+is ommited the function returns the current passthru mode. Where TRUE
+(1) means the XML DOM should be passed directly to the client and
+FALSE (0) marks that the DOM must get processed first.
+
+Additionally this function has a second FALSE state which is when
+returned I<undef>. In such case the passthru state is not set.
+
+If an application sets passthru by itself any external 'passthru'
+parameter will be lost. This is usefull if one likes to avoid, someone
+can fetch the plain (untransformed) XML Data.
+
 =item function serialization()
 
 This method renders the data stored in the DOM with
@@ -826,6 +858,8 @@ The algorithm used by serialization is simple:
 =over 4
 
 =item * request the appplication DOM through B<getDOM()>
+
+=item * test for XML passthru
 
 =item * get the stylesheet the application preferes through B<selectStylesheet()>
 
@@ -924,4 +958,4 @@ Christian Glahn, christian.glahn@uibk.ac.at
 
 =head1 VERSION
 
-1.0.0
+1.0.2
