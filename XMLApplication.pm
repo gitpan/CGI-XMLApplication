@@ -1,14 +1,14 @@
-# $Id$
+# $Id: XMLApplication.pm,v 1.4 2001/08/29 13:47:38 cb13108 Exp $
 
 package CGI::XMLApplication;
 
 # ################################################################
-# $Revision: 1.2 $
+# $Revision: 1.4 $
 # $Author: cb13108 $
 #
 # (c) 2001 Christian Glahn <christian.glahn@uibk.ac.at>
 # All rights reserved.
-# 
+#
 # This code is free software; you can redistribute it and/or
 # modify it under the same terms as Perl itself.
 #
@@ -17,7 +17,9 @@ package CGI::XMLApplication;
 # ################################################################
 # module loading and global variable initializing
 # ################################################################
-use vars qw( @ISA $VERSION @panic $DEBUG $STYLESHEET_CALLBACK
+use strict;
+# should remove use vars because of mod_perl
+use vars qw( $VERSION @panic $DEBUG $STYLESHEET_CALLBACK
              $DOM_CALLBACK $SETEVENT_CALLBACK );
 use CGI;
 use Carp;
@@ -25,9 +27,10 @@ use Carp;
 # ################################################################
 # inheritance
 # ################################################################
-@ISA = qw( CGI );
+@CGI::XMLApplication::ISA = qw( CGI );
+
 # ################################################################
-$VERSION = "0.8.1"; 
+$VERSION = "0.9.3";
 
 # ################################################################
 # general configuration
@@ -55,7 +58,7 @@ $DEBUG = 0;
 # ################################################################
 sub new {
   my $class = shift;
-  $self = $class->SUPER::new( @_ );
+  my $self = $class->SUPER::new( @_ );
   bless $self, $class;
 
   $self->{XML_CGIAPP_HANDLER_}    = [];
@@ -64,7 +67,7 @@ sub new {
 
   # register the events to handle
   if ( my $func = $self->can( $SETEVENT_CALLBACK ) ){
-    # warn "[CGI::XMLApplication] set event names\n";
+    debug_msg( 10, "set event names" );
     $self->setEventList( $self->$func() );
   }
 
@@ -76,16 +79,36 @@ sub new {
 
 # application related ############################################
 # both functions are only for backward compatibilty with older scripts
+sub debug_msg {
+  my $level = shift;
+  if ( $level <= $DEBUG && scalar @_ ) {
+    my ($module, undef, $line) = caller();
+    warn "[$module; line: $line] ", join(' ', @_) , "\n";
+  }
+}
+
 sub setDebugLevel {
   $DEBUG = $_[1];
-  warn "[CGI::XMLAppliction] new debug level is " . $_[1] . "\n";
+  debug_msg( 1, "new debug level is " . $_[1] );
 }
 
 sub getDebugLevel     { $DEBUG; }
 
+# ################################################################
+# content related functions
+# non-xml content-type passthru ##################################
+# similar to set|getContentType but with a clearer name
+sub setNonXMLContentType { $_[0]->{XML_CGIAPP_CONTENT_TYPE_} = $_[1]; }
+sub getNonXMLContentType { return $_[0]->{XML_CGIAPP_CONTENT_TYPE_}; }
+
+# non-xml content passthru ##################################
+# NonXMLContent has to be a reference to a scalar!
+sub setNonXMLContent { $_[0]->{XML_CGIAPP_NONXMLCNT_} = $_[1] if ref($_[1]); }
+sub getNonXMLContent { return $_[0]->{XML_CGIAPP_NONXMLCNT_}; }
+
 # dom related ####################################################
-sub getDOM            { $_[0]->{XML_CGIAPP_DOM_};}
 sub setDOM            { $_[0]->{XML_CGIAPP_DOM_} = $_[1];}
+sub getDOM            { $_[0]->{XML_CGIAPP_DOM_};}
 
 # stylesheet directory information ###############################
 sub setStylesheetDir  { $_[0]->{XML_CGIAPP_STYLESDIR_} = $_[1];}
@@ -107,8 +130,7 @@ sub deleteEvent       {
   my $self = shift;
   if ( scalar @_ ){
     foreach ( @_ ) {
-      warn "[XML::CGIAppliction] delete event $_\n"
-        if $self->getDebugLevel() > 8 ;
+      debug_msg( 8, "[XML::CGIAppliction] delete event $_" );
       $self->delete( $_ );
       $self->delete( $_.'.x' );
       $self->delete( $_.'.y' );
@@ -116,8 +138,7 @@ sub deleteEvent       {
   }
   else {
     foreach ( @{ $self->{XML_CGIAPP_HANDLER_} } ){
-      warn "[XML::CGIAppliction] delete event $_\n"
-        if $self->getDebugLevel() > 8 ;
+      debug_msg( 8, "delete event $_" );
       $self->delete( $_ );
       $self->delete( $_.'.x' );
       $self->delete( $_.'.y' );
@@ -126,8 +147,7 @@ sub deleteEvent       {
 }
 
 sub sendEvent         {
-  warn "[CGI::XMLAppliction] send event " . $_[1] ."\n"
-    if $_[0]->getDebugLevel() == 10 ;
+  debug_msg( 10, "send event " . $_[1] );
   $_[0]->deleteEvent();
   $_[0]->param( -name=>$_[1] , -value=>1 );
 }
@@ -170,7 +190,7 @@ sub checkFields{
   my @missing = grep {
     not length $self->param( $_ ) || $self->param( $_ ) =~ /^\s*$/
   } @_;
-  return wantarray ? @missing : ( @$missing >= 0 ? undef : 1 );
+  return wantarray ? @missing : ( scalar(@missing) > 0 ? undef : 1 );
 }
 
 sub getFieldsAsHash {
@@ -227,24 +247,36 @@ sub serialization {
   my $ctxt = shift;
   my $dl       = $self->getDebugLevel();
   my $id;
+  my $cookie = $self->getCookie();
+
+  # first we check if content type and Non XML data exist.
+  if ( $self->getNonXMLContentType() && ref($self->getNonXMLContent()) ) {
+    debug_msg( 10, "return non XML data to client" );
+    my %header = ( -type=> $self->getNonXMLContentType() );
+    $header{-cookie} = $cookie if $cookie;
+    print $self->header( %header );
+    print ${ $self->getNonXMLContent() };
+    return 1;
+  }
+
+  debug_msg( 10, "Handle XML Data" );
 
   my $xml_doc = $self->getDOM();
   if ( not defined $xml_doc ) {
     if ( my $func = $self->can( $DOM_CALLBACK ) ) {
-      warn "[CGI::XMLApplication] DOM Request callback \n" if $dl == 10;
+      debug_msg( 10, "DOM Request callback");
       $xml_doc = $self->$func( $ctxt );
     }
 
     if ( not defined $xml_doc ) {
-      warn "[XML::CGIAppliction] no DOM defined; use empty DOM\n" if $dl == 10;
+      debug_msg( 10, "no DOM defined; use empty DOM" );
       $xml_doc = XML::LibXML::Document->new;
     }
   }
 
   if( length  $self->param( 'passthru' ) ) {
     # this is a useful feature for DOM debugging
-    warn "[XML::CGIAppliction] attempt to pass the DOM to the client\n"
-      if $dl == 10;
+    debug_msg( 10, "attempt to pass the DOM to the client" );
     print $self->header( -type=>'text/xml'  );
     # my $cookie = $self->getCookie();
     # if ( defined $cookie ) {
@@ -258,7 +290,7 @@ sub serialization {
 
   my $file = undef;
   if( my $func = $self->can( $STYLESHEET_CALLBACK ) ) {
-    # warn "[CGI::XMLApplication] call stylesheet selector\n";
+    debug_msg( 10, "call stylesheet selector" );
     $file = $self->$func( $ctxt );
   }
   else {
@@ -267,7 +299,7 @@ sub serialization {
     $file = $self->getStylesheetDir() . ($self->getStylesheetList())[$id];
   }
 
-  warn "[CGI::XMLApplication] filename is $file \n" if $dl > 5;
+  debug_msg( 5, "filename is $file" );
 
   # we only do the rendering if the stylesheet is available from our
   # viewpoint.
@@ -278,7 +310,6 @@ sub serialization {
 
     # prepare default values
     my %header = ();
-    my $cookie = $self->getCookie();
 
     %header = ( -cookie=>$cookie ) if $cookie;
 
@@ -292,15 +323,14 @@ sub serialization {
       $xsl_dom  = $parser->parse_file( $file );
     };
     if ( $@ ) {
-      warn "Corrupted Stylesheet:\n broken XML\n". $@ if $dl > 3;
+      debug_msg( 3, "Corrupted Stylesheet:\n broken XML\n". $@ );
       $self->setPanicMsg( "Corrupted document:\n broken XML\n". $@ );
       return -2;
     }
 
-    warn( "[CGI::XMLApplication] parsed stylesheet file ",
+    debug_msg( 8, "parsed stylesheet file ",
           ref( $xsl_dom ) ,
-          "\nCGI::XMLApplication prepare stylesheet\n" )
-      if $dl > 8;
+          "\nprepare stylesheet\n" );
 
     eval {
       # we simply can't do this, since libxslt will trash the stylesheet dom
@@ -316,16 +346,16 @@ sub serialization {
       $stylesheet = $xslt->parse_stylesheet_file( $file );
     };
     if( $@ ) {
-      warn "Corrupted Stylesheet:\n". $@ ."\n" if $dl > 3;
+      debug_msg( 3, "Corrupted Stylesheet:\n". $@ ."\n" );
       $self->setPanicMsg( "Corrupted Stylesheet:\n". $@ );
       return -2;
     }
-    warn "CGI::XMLApplication do tranform\n" if $dl > 8;
+    debug_msg( 8, "serialization do tranform" );
     eval {
       $res = $stylesheet->transform( $xml_doc );
     };
     if( $@ ) {
-      warn "Broken Transformation:\n". $@ ."\n" if $dl > 3;
+      debug_msg( 3, "Broken Transformation:\n". $@ ."\n" );
       $self->setPanicMsg( "Broken Transformation:\n". $@ );
       return -2;
     }
@@ -335,21 +365,21 @@ sub serialization {
       $header{-type} = $self->{XML_CGIAPP_CONTENT_TYPE_}
                        || $stylesheet->media_type;
       $header{-charset} = $stylesheet->output_encoding;
-      # warn "[CGI::XMLApplication] Output $type, $encoding\n";
+      debug_msg( 10, "Output $type, $encoding" );
     }
 
-    # warn "CGI::XMLApplication do output\n";
+    debug_msg( 10, "serialization do output" );
     # we want nice xhtml and since the output_string does not the
     # right job
     my $out_string= undef;
 
-    warn "get output string\n" if $dl > 9;
+    debug_msg( 9, "serialization get output string" );
     eval {
       $out_string =  $stylesheet->output_string( $res );
     };
-    warn "CGI::XMLApplication rendered output\n" if $dl == 10;
+    debug_msg( 10, "serialization rendered output" );
     if ( $@ ) {
-      warn "Corrupted Output:\n". $@ ."\n" if $dl > 3 ;
+      debug_msg( 3, "Corrupted Output:\n", $@ , "\n" );
       $self->setPanicMsg( "Corrupted Output:\n". $@ );
       return -2;
     }
@@ -358,13 +388,13 @@ sub serialization {
       print $self->header( %header );
       $out_string =~ s/\/>/ \/>/g; # yes, this is time consuming ... :(
       print $out_string;
-      warn "CGI::XMLApplication output printed\n" if $dl == 10;
+      debug_msg( 10, "output printed" );
     }
-    warn "post segfault test\n" if $dl == 10;
+    debug_msg( 11, "XML::LibXSLT segfault test" );
     $id = 0;
   }
   else {
-    warn "panic stylesheet file $file does not exist\n" if $dl > 3;
+    debug_msg( 2 , "panic stylesheet file $file does not exist" );
     $self->setPanicMsg( "$file" );
     $id = -2;
   }
@@ -376,13 +406,14 @@ sub panic {
   return unless $pid < 0;
   $pid++;
   $pid*=-1;
-  my $str = "CGI::XMLApplication PANIC $pid :" .  $panic[$pid] ;
+
+  my $str = "PANIC $pid :" .  $panic[$pid] ;
   # this is nice for debugging from logfiles...
-  warn $str ."\n". $self->getPanicMsg();
+  debug_msg( 1, "$str\n", $self->getPanicMsg() );
+
   print $self->header( 'text/html' ) ,$self->b($str) ,"<br />\n";
   print "( <pre>".$self->getPanicMsg() , "</pre> )<br />\n\n";
   print "Please Contact the Systemadminstrator<br />\n";
-
 }
 
 1;
@@ -485,18 +516,18 @@ would look something like the following code:
 
     use CGI::XMLApplication;
     @ISA = qw(CGI::XMLApplication);
-    
+
     sub registerEvents { qw( dummy ); } # the handler list
 
-    # ... 
+    # ...
 
     sub event_dummy {
        my ( $self, $context ) = @_;
 
-       # your event code goes here 
+       # your event code goes here
 
        return 0;
-    }    
+    }
 
 During the lifecircle of a CGI script, often the implementation starts
 with ordinary submit buttons, which get often changed to so called
@@ -771,6 +802,11 @@ the stylesheet returned by the event handler. You should override
 this function if you like to use a different way of displaying your
 data.
 
+B<serialization> checks if there exists a Non XML Content Type and Non
+XML Data. In such cases the function will directly return the data
+with the associated content-type. Any cookies set will be passed as
+well.
+
 You may not override the B<serialization> function, if you just handle
 XML data that should be transformed XSLT stylesheets. In somecases the
 returned data is not XML but for instance in PDF format, while most of
@@ -798,6 +834,31 @@ the method is called twice, only the last string will be displayed.
 =item function getPanicMsg
 
 This method returns the panic message set by setPanicMsg().
+
+=item method setNonXMLContentType
+
+In some cases a script should return a special Content-Type to the
+client.  This content type can be set with this function. Since there
+is only a single content allowed this function will overwrite any
+previously set content type.
+
+=item function getNonXMLContentType
+
+This function is used by serialization function to get the current
+content type.
+
+=item method setNonXMLContent
+
+In cases binary data shall get passed to the client, this function
+enables to pass a reference to a scalar (string) to the application.
+For this binary data has to be read entirely into a string. If one
+likes to stream data from a file B<serialization> has to be
+overridden.
+
+=item function getNonXMLContent
+
+Through this function B<serialization> fetches any type of data
+previously set by B<setNonXMLContent>.
 
 =back
 
@@ -838,7 +899,7 @@ so older applications does not have to be rewritten. Now I recommend,
 to use the callback/ overriding system.
 
 
-=item method setDOM XML::LibXML::Document
+=item method setDOM( XML::LibXML::Document )
 
 This method sets a user initialized DOM to the class. Usually this is
 done once per application. Be aware, that the DOM is passed straight
