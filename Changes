@@ -1,5 +1,19 @@
 Revision history for Perl extension CGI::XMLApplication
 
+1.1.0
+    tiny interface changes in this
+    getStylesheet() obsoletes selectStylesheet()
+    + getStylesheetString() so xsl strings can be passed as well
+    + panic() sends now the error state
+    + $CGI::XMLApplication::Quiet controls the errormessages returned 
+      to the client
+    + event_default returns now 0 instead of an panic on default
+    + added the minimal example
+    o documentation bugs fixed
+    o default functions return now default values (empty hashes or strings) 
+      instead of undef
+    o no warnings send with perl -w (as far as i tested)
+
 1.0.2
     THIS VERSION FIXES TWO MAJOR BUGS INTRODUCED WITH 1.0.0
     + getEvent Bug FIXED

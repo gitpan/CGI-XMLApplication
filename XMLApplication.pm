@@ -1,9 +1,9 @@
-# $Id: XMLApplication.pm,v 1.8 2001/12/06 02:55:51 cb13108 Exp $
+# $Id: XMLApplication.pm,v 1.9 2001/12/10 23:12:13 cb13108 Exp $
 
 package CGI::XMLApplication;
 
 # ################################################################
-# $Revision: 1.8 $
+# $Revision: 1.9 $
 # $Author: cb13108 $
 #
 # (c) 2001 Christian Glahn <christian.glahn@uibk.ac.at>
@@ -32,7 +32,7 @@ use Carp;
 
 # ################################################################
 
-$CGI::XMLApplication::VERSION = "1.0.2";
+$CGI::XMLApplication::VERSION = "1.1.0";
 
 # ################################################################
 # general configuration
@@ -82,14 +82,18 @@ sub debug_msg {
 # dummy functions
 #
 # each function is required to be overwritten by any class inheritated
-sub registerEvents   { return undef; }
+sub registerEvents   { return (); }
 
 # all following function will recieve the context, too
 sub getDOM           { return undef; }
 sub requestDOM       { return undef; }  # old style use getDOM!
-sub selectStylesheet { return undef; }
-sub getXSLParameter  { return undef; }  # should return a plain hash of parameters passed to xsl
-sub setHttpHeader    { return undef; }  # should return a hash of header
+
+sub getStylesheetString { return ""; }     # return a XSL String
+sub getStylesheet       { return ""; }     # returns either name of a stylesheetfile or the xsl DOM
+sub selectStylesheet    { return ""; }     # old style getStylesheet
+
+sub getXSLParameter  { return (); }  # should return a plain hash of parameters passed to xsl
+sub setHttpHeader    { return (); }  # should return a hash of header
 
 sub skipSerialization{
     my $self = shift;
@@ -104,7 +108,7 @@ sub passthru {
         $self->{CGI_XMLAPP_PASSXML} = shift;
         $self->delete( 'passthru' ); # delete any passthru parameter
     }
-    elsif ( length $self->param( "passthru" ) ) {
+    elsif ( defined $self->param( "passthru" ) ) {
         $self->{CGI_XMLAPP_PASSXML} = 1    ;
         $self->delete( 'passthru' );
     }
@@ -168,7 +172,7 @@ sub getPanicMsg       { $_[0]->{XML_CGIAPP_PANIC_} }
 # default event handler prototypes
 sub event_init    {}
 sub event_exit    {}
-sub event_default { return -1 }
+sub event_default { return 0 }
 
 # ################################################################
 # CGI specific helper functions
@@ -276,9 +280,11 @@ sub serialization {
     if ( not defined $xml_doc ) {
         debug_msg( 10, "no DOM defined; use empty DOM" );
         $xml_doc = XML::LibXML::Document->new;
+        # the following line is to keep xpath.c quiet!
+        $xml_doc->setDocumentElement( $xml_doc->createElement( "dummy" ) );
     }
 
-    if( $self->passthru() == 1 ) {
+    if( defined $self->passthru() && $self->passthru() == 1 ) {
         # this is a useful feature for DOM debugging
         debug_msg( 10, "attempt to pass the DOM to the client" );
         $header{-type} = 'text/xml';
@@ -287,7 +293,8 @@ sub serialization {
         return 0;
     }
 
-    my $stylesheet = $self->selectStylesheet( $ctxt );
+    my $stylesheet = $self->getStylesheet( $ctxt );
+
     my ( $xsl_dom, $style, $res );
     my $parser = XML::LibXML->new();
     my $xslt   = XML::LibXSLT->new();
@@ -308,9 +315,43 @@ sub serialization {
         }
     }
     else {
-        debug_msg( 2 , "panic stylesheet file $stylesheet does not exist" );
-        $self->setPanicMsg( "$stylesheet" );
-        return -2;
+        # first test the new style interface
+        my $xslstring = $self->getStylesheetString( $ctxt );
+        if ( length $xslstring ) {
+            debug_msg( 5, "stylesheet is xml string"  );
+            eval { $xsl_dom = $parser->parse_string( $xslstring ); };
+            if ( $@ || not defined $xsl_dom ) {
+                # the parse failed !!!
+                debug_msg( 3, "Corrupted Stylesheet String:\n". $@ ."\n" );
+                $self->setPanicMsg( "Corrupted Stylesheet String:\n". $@ );
+                return -2;
+            }
+        }
+        else {
+            # now test old style interface
+            debug_msg( 5, "old style interface to select the stylesheet"  );
+            $stylesheet = $self->selectStylesheet( $ctxt );
+            if ( ref( $stylesheet ) ) {
+                debug_msg( 5, "stylesheet is reference"  );
+                $xsl_dom = $stylesheet;
+            }
+            elsif ( -f $stylesheet && -r $stylesheet ) {
+                debug_msg( 5, "filename is $stylesheet" );
+                eval {
+                    $xsl_dom  = $parser->parse_file( $stylesheet );
+                };
+                if ( $@ ) {
+                    debug_msg( 3, "Corrupted Stylesheet:\n broken XML\n". $@ );
+                    $self->setPanicMsg( "Corrupted document:\n broken XML\n". $@ );
+                    return -2;
+                }
+            }
+            else {
+                debug_msg( 2 , "panic stylesheet file $stylesheet does not exist" );
+                $self->setPanicMsg( "$stylesheet" );
+                return length $stylesheet ? -2 : -1 ;
+            }
+        }
     }
 
     eval {
@@ -326,7 +367,7 @@ sub serialization {
     my %xslparam = $self->getXSLParameter( $ctxt );
     eval {
         # first do special xpath encoding of the parameter
-        if ( %xslparam && scalar( %xslparam ) > 0) {
+        if ( %xslparam && scalar( keys %xslparam ) > 0 ) {
             $res = $style->transform( $xml_doc,
                                       XML::LibXSLT::xpath_to_string(%xslparam)
                                     );
@@ -377,13 +418,25 @@ sub panic {
     $pid++;
     $pid*=-1;
 
-    my $str = "PANIC $pid :" .  $CGI::XMLApplication::panic[$pid] ;
+    my $str = "Application Panic: ";
+    $str = "PANIC $pid :" .  $CGI::XMLApplication::panic[$pid] ;
     # this is nice for debugging from logfiles...
-    debug_msg( 1, "$str\n", $self->getPanicMsg() );
+    $str  = $self->b( $str ) . "<br />\n";
+    $str .= $self->pre( $self->getPanicMsg() );
+    $str .= "Please Contact the Systemadminstrator<br />\n";
 
-    print $self->header( 'text/html' ) ,$self->b($str) ,"<br />\n";
-    print "( <pre>".$self->getPanicMsg() , "</pre> )<br />\n\n";
-    print "Please Contact the Systemadminstrator<br />\n";
+    debug_msg( 1, "$str" );
+
+    if ( $CGI::XMLApplication::Quiet == 1 ) {
+        $str = "Application Panic";
+    }
+    if ( $CGI::XMLApplication::Quiet == 2 ) {
+        $str = "";
+    }
+
+    my $status = $pid < 3 ? 404 : 500; # default is the application error ...
+    print $self->header( -status => $status ) , $str ,"\n";
+
 }
 
 1;
@@ -607,11 +660,25 @@ catches an error, that does not allow any XML/XSLT processing. This
 can be for example, that any required perl modules are not installed
 on the system.
 
-If the B<selectStylesheet> is not implemented the CGI::XMLApplication
-will assume the returned value as id to a stylesheet list set by
-setStylesheetList(). Basicly this is done for backward compatibility
-reasons. An application better implements the B<selectStylesheet>
-callback, to end up with a more strict structure.
+If the B<getStylesheet> is implemented the CGI::XMLApplication will
+assume the returned value either as a filename of a stylesheet or as a
+XML DOM representation of the same. If Stylesheets are stored in a
+file accessable from the , one should set the common path for the
+stylesheets and let B<CGI::XMLApplication> do the parsing job.
+
+In cases the stylesheet is already present as a string (e.g. as a
+result of a database query) one may pass this string directly to
+B<CGI::XMLApplication>.
+
+I<selectStylesheet> is an alias for I<getStylesheet> left for
+compatibility reasons.
+
+If none of these stylesheet selectors succeeds the I<Stylesheet
+missing> panic code is thrown. If the parse of the XML fails
+I<Stylesheet not available> is thrown. The latter case will also give
+some informations where the stylesheet selection failed.
+
+So how to tell the system about the available event handler?
 
 There are two ways to tell the system which events are to be handled.
 
@@ -878,7 +945,24 @@ is stopped and the generated error messages are returned.
 
 =item method panic SCALAR
 
-This a simple error message handler
+This a simple error message handler. By default this function will
+print some information to the client where the application
+failed. While development this is a useful feature on production
+system this may pass vunerable informations about the system to the
+outside. To change the default behaviour, one may write his own panic
+method or simply set I<$CGI::XMLApplication::Quiet> to 1. The latter
+still causes the error page but does not send any error message.
+
+The current implementation send the 404 status to the client if any
+low level errors occour ( e.g. panic levels > -4 aka Application
+Panic).  Commonly this really shows a "Not Found" on the application
+Level. Application Panics will set the 500 error state. This makes
+this implementation work perfect with a mod_perl installation.
+
+In case L<mod_perl> is used to handle the script one likes to set
+I<CGI::XMLApplication::Quiet> to 2 which will cause
+CGI::XMLApplication just to return the error state while L<mod_perl>
+does the rest.
 
 =item method setPanicMsg $SCALAR
 

@@ -15,3 +15,7 @@ examples/ex2_form.xsl
 examples/ex2_finish.xsl
 examples/example4.pm
 examples/example4.pl
+examples/minimal.pl
+examples/minimalapp.pm
+examples/minimal.xsl
+
